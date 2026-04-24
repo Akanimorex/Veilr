@@ -1,0 +1,25 @@
+{
+  "name": "veilr-contracts",
+  "version": "1.0.0",
+  "description": "Veilr - Confidential Cross-Border Remittance on Zama Protocol",
+  "scripts": {
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "deploy:sepolia": "npx hardhat run scripts/deploy.ts --network sepolia",
+    "clean": "npx hardhat clean"
+  },
+  "devDependencies": {
+    "@fhevm/hardhat-plugin": "^0.4.2",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.19.39",
+    "hardhat": "^2.22.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@fhevm/solidity": "^0.11.1",
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5",
+    "encrypted-types": "^0.0.4"
+  }
+}
