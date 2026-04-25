@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import {FHE, euint64, eaddress, ebool, externalEuint64, externalEaddress} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint8, euint64, eaddress, ebool, externalEuint8, externalEuint64, externalEaddress} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 contract Veilr is ZamaEthereumConfig, AccessControl {
@@ -198,5 +198,109 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
     /// @param symbol The token symbol
     function getBalance(string calldata symbol) public view returns (euint64) {
         return balances[_getSymbolHash(symbol)][msg.sender];
+    }
+
+    // --- Private Credit Scoring Module ---
+
+    struct CreditApplication {
+        euint64 encryptedAvgBalance;
+        euint64 encryptedTxCount;
+        euint64 encryptedWalletAge;
+        euint8  encryptedRepaymentFlag;
+        euint64 encryptedScore;
+        euint8  encryptedTier;
+        bool    scored;
+        address applicant;
+        uint256 timestamp;
+    }
+
+    mapping(uint256 => CreditApplication) public applications;
+    mapping(address => uint256[]) public applicantHistory;
+    uint256 public applicationCount;
+
+    event CreditApplicationSubmitted(uint256 indexed appId, address indexed applicant, uint256 timestamp);
+    event ScoreTierGranted(uint256 indexed appId, address indexed lender);
+
+    function applyForCredit(
+        externalEuint64 avgBalance,
+        externalEuint64 txCount,
+        externalEuint64 walletAge,
+        externalEuint8 repaymentFlag,
+        bytes calldata inputProof
+    ) public {
+        euint64 eAvgBalance = FHE.fromExternal(avgBalance, inputProof);
+        euint64 eTxCount = FHE.fromExternal(txCount, inputProof);
+        euint64 eWalletAge = FHE.fromExternal(walletAge, inputProof);
+        euint8 eRepaymentFlag = FHE.fromExternal(repaymentFlag, inputProof);
+
+        FHE.allowTransient(eAvgBalance, address(this));
+        FHE.allowTransient(eTxCount, address(this));
+        FHE.allowTransient(eWalletAge, address(this));
+        FHE.allowTransient(eRepaymentFlag, address(this));
+
+        uint256 appId = applicationCount++;
+        applications[appId] = CreditApplication({
+            encryptedAvgBalance: eAvgBalance,
+            encryptedTxCount: eTxCount,
+            encryptedWalletAge: eWalletAge,
+            encryptedRepaymentFlag: eRepaymentFlag,
+            encryptedScore: FHE.asEuint64(0),
+            encryptedTier: FHE.asEuint8(0),
+            scored: false,
+            applicant: msg.sender,
+            timestamp: block.timestamp
+        });
+
+        applicantHistory[msg.sender].push(appId);
+        
+        _computeScore(appId);
+        
+        emit CreditApplicationSubmitted(appId, msg.sender, block.timestamp);
+    }
+
+    function _computeScore(uint256 appId) internal {
+        CreditApplication storage app = applications[appId];
+        
+        // score = (avgBalance × 3) + (txCount × 2) + (walletAge × 2) + (repaymentFlag × 3)
+        euint64 part1 = FHE.mul(app.encryptedAvgBalance, uint64(3));
+        euint64 part2 = FHE.mul(app.encryptedTxCount, uint64(2));
+        euint64 part3 = FHE.mul(app.encryptedWalletAge, uint64(2));
+        euint64 part4 = FHE.mul(FHE.asEuint64(app.encryptedRepaymentFlag), uint64(3));
+
+        euint64 totalScore = FHE.add(FHE.add(part1, part2), FHE.add(part3, part4));
+        
+        // Pre-calculate Tier
+        euint8 tier3 = FHE.asEuint8(3);
+        euint8 tier2 = FHE.asEuint8(2);
+        euint8 tier1 = FHE.asEuint8(1);
+
+        euint8 tier = FHE.select(
+            FHE.le(totalScore, uint64(15)),
+            tier3,
+            FHE.select(
+                FHE.le(totalScore, uint64(25)),
+                tier2,
+                tier1
+            )
+        );
+
+        app.encryptedScore = totalScore;
+        app.encryptedTier = tier;
+        app.scored = true;
+
+        FHE.allow(totalScore, app.applicant);
+        FHE.allow(tier, app.applicant);
+        FHE.allow(totalScore, address(this));
+        FHE.allow(tier, address(this));
+    }
+
+    function getScoreTier(uint256 appId) public returns (euint8) {
+        require(applications[appId].scored, "Not scored yet");
+        
+        euint8 tier = applications[appId].encryptedTier;
+        FHE.allow(tier, msg.sender); // Allow the lender calling this function
+
+        emit ScoreTierGranted(appId, msg.sender);
+        return tier;
     }
 }

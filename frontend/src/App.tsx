@@ -4,7 +4,8 @@ import { WalletConnect } from './components/WalletConnect';
 import { Dashboard } from './pages/Dashboard';
 import { Send } from './pages/Send';
 import { Compliance } from './pages/Compliance';
-import { ShieldAlert } from 'lucide-react';
+import { Credit } from './pages/Credit';
+import { ShieldAlert, BadgeCheck } from 'lucide-react';
 
 const Navigation = () => {
   const location = useLocation();
@@ -21,7 +22,19 @@ const Navigation = () => {
             <span className="text-xl font-bold tracking-tight text-white">Veilr.</span>
           </Link>
           
-          <div className="flex gap-6 text-sm font-medium">
+          <div className="flex items-center gap-6 text-sm font-medium">
+            {/* Credit Score is the hero feature — visually prominent */}
+            <Link 
+              to="/credit" 
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all ${
+                isActive('/credit') === 'text-white'
+                  ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                  : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'
+              }`}
+            >
+              <BadgeCheck size={16} />
+              Credit Score
+            </Link>
             <Link to="/" className={`transition-colors ${isActive('/')}`}>Dashboard</Link>
             <Link to="/send" className={`transition-colors ${isActive('/send')}`}>Send</Link>
             <Link to="/compliance" className={`transition-colors flex items-center gap-2 ${isActive('/compliance')}`}>
@@ -48,6 +61,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/send" element={<Send />} />
               <Route path="/compliance" element={<Compliance />} />
+              <Route path="/credit" element={<Credit />} />
             </Routes>
           </main>
         </div>

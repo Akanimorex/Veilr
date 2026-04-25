@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
 import { TransactionHistory } from '../components/TransactionHistory';
-import { Shield, RefreshCw, Loader2 } from 'lucide-react';
+import { Shield, RefreshCw, Loader2, BadgeCheck, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getAddress, isAddress } from 'ethers';
+import { getAddress } from 'ethers';
 
 export const Dashboard = () => {
     const { account, instance, provider, rawProvider } = useFhevm();
@@ -15,6 +15,7 @@ export const Dashboard = () => {
     const [depositStatus, setDepositStatus] = useState<string>('');
     const [selectedCurrency, setSelectedCurrency] = useState<string>('cUSDT');
     const [authData, setAuthData] = useState<{ keypair: any, signer: string, startTimestamp: number, durationDays: number } | null>(null);
+    const [creditAppCount, setCreditAppCount] = useState<number>(0);
 
     const currencies = [
         { symbol: 'cUSDT', label: 'US Dollar', flag: '🇺🇸' },
@@ -200,7 +201,23 @@ export const Dashboard = () => {
         if (account && instance) {
             fetchBalance();
         }
-    }, [account, instance, selectedCurrency, authData]); // authData included to re-fetch when authorized
+    }, [account, instance, selectedCurrency, authData]);
+
+    // Fetch credit application count for the stat card
+    useEffect(() => {
+        const fetchCreditCount = async () => {
+            if (!account) return;
+            try {
+                const contract = await getContract();
+                const filter = contract.filters.CreditApplicationSubmitted(null, account);
+                const events = await contract.queryFilter(filter, -10000);
+                setCreditAppCount(events.length);
+            } catch (e) {
+                // Silently fail — credit history is optional context
+            }
+        };
+        fetchCreditCount();
+    }, [account]);
 
     const handleMint = async () => {
         if (!account || !instance) {
@@ -262,6 +279,42 @@ export const Dashboard = () => {
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
+            {/* Stat Cards Row — Credit App Count */}
+            {account && (
+                <div className="grid grid-cols-3 gap-4">
+                    <Link 
+                        to="/credit"
+                        className="col-span-2 group flex items-center justify-between p-6 bg-gradient-to-br from-primary/20 to-surface border border-primary/30 rounded-2xl hover:border-primary/50 transition-all"
+                    >
+                        <div>
+                            <p className="text-xs text-primary font-bold uppercase tracking-wider mb-1">Credit Applications</p>
+                            <p className="text-3xl font-bold text-white">{creditAppCount}</p>
+                            <p className="text-xs text-text-muted mt-1">submitted on-chain</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-3">
+                            <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                <BadgeCheck size={24} />
+                            </div>
+                            <div className="flex items-center gap-1 text-primary text-xs font-bold">
+                                Apply now <ArrowUpRight size={14} />
+                            </div>
+                        </div>
+                    </Link>
+                    <div className="p-6 bg-surface border border-white/5 rounded-2xl">
+                        <p className="text-xs text-text-muted font-bold uppercase tracking-wider mb-1">Network</p>
+                        <p className="text-sm font-semibold text-white">Sepolia</p>
+                        <p className="text-xs text-text-muted mt-1">Zama FHEVM</p>
+                        <div className="mt-4 flex items-center gap-2">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400"></span>
+                            </span>
+                            <span className="text-[10px] text-green-400 font-medium">Active</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Currency Selector */}
             <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
                 {currencies.map((c) => (
@@ -327,14 +380,20 @@ export const Dashboard = () => {
                 )}
 
                 <div className="mt-8 flex gap-4">
-                    <Link to="/send" className="inline-block px-6 py-3 bg-white text-background font-medium rounded-xl hover:bg-white/90 transition-colors">
-                        Send Assets
+                    {/* Primary CTA: Credit Scoring */}
+                    <Link to="/credit" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-background font-bold rounded-xl hover:bg-white/90 transition-colors shadow-lg">
+                        <BadgeCheck size={18} />
+                        Apply for Credit
+                    </Link>
+                    {/* Secondary CTA: Send */}
+                    <Link to="/send" className="inline-flex items-center gap-2 px-6 py-3 bg-primary/20 text-primary border border-primary/30 font-medium rounded-xl hover:bg-primary/30 transition-colors">
+                        Send Funds
                     </Link>
                     <button 
                         type="button"
                         onClick={handleMint} 
                         disabled={loading || !!depositStatus}
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-primary/20 text-primary border border-primary/30 font-medium rounded-xl hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-white/5 text-text-muted border border-white/5 font-medium rounded-xl hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {(loading || !!depositStatus) && <Loader2 size={18} className="animate-spin" />}
                         {depositStatus || `Mint Mock ${selectedCurrency}`}
