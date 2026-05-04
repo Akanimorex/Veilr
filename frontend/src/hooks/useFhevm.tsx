@@ -2,6 +2,12 @@ import { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserProvider } from 'ethers';
 import { createInstance, SepoliaConfig, FhevmInstance, initSDK } from '@zama-fhe/relayer-sdk/web';
 
+declare global {
+  interface Window {
+    ethereum: any;
+  }
+}
+
 export interface FhevmContextType {
   instance: FhevmInstance | null;
   provider: BrowserProvider | null;

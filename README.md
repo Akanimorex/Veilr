@@ -1,12 +1,21 @@
-# Veilr - Private Financial Infrastructure (FHE)
+<div align="center">
+  <img src="assets/logo.png" width="120" height="120" alt="Veilr Logo" />
+  <h1>Veilr</h1>
+  <p><b>Private Financial Infrastructure powered by Fully Homomorphic Encryption (FHE)</b></p>
+  
+  [![Network: Sepolia](https://img.shields.io/badge/Network-Sepolia_Testnet-blueviolet?style=flat-square)](https://sepolia.etherscan.io/)
+  [![Privacy: FHE](https://img.shields.io/badge/Privacy-FHE-blue?style=flat-square)](https://zama.ai/fhevm)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+</div>
 
-**A Fully Homomorphic Encryption (FHE) protocol providing private credit scoring, encrypted remittance, and threshold compliance for the next generation of DeFi.**
+---
 
 ## Project Overview
 
 In today's Web3 landscape, every financial signal is public. Wallet balances, transaction amounts, and creditworthiness are permanently visible on-chain. This "radical transparency" is a major barrier to institutional and mass-market adoption. No one wants their entire salary, savings habits, or financial reputation exposed to the public.
 
 **Veilr** is a privacy-preserving infrastructure layer built on the Zama FHEVM. It provides a three-pillar solution for financial sovereignty:
+
 1.  **Private Credit Scoring**: An API-first module that allows users to generate a verifiable financial reputation (Tier 1, 2, or 3) based on their private wallet history, without revealing their raw balances or activity.
 2.  **Encrypted Remittance**: A secure transfer protocol where amounts and recipient identities remain completely encrypted on-chain.
 3.  **Threshold Compliance**: A multi-sig auditing layer that allows regulators to decrypt specific transactions only when authorized by multiple independent compliance officers.
@@ -30,10 +39,21 @@ Privacy is a right, but accountability is a necessity for regulated markets.
 -   **Multi-Sig Decryption**: If a transaction is flagged for AML/KYC review, `COMPLIANCE_ROLE` members must co-sign a decryption request.
 -   **Regulatory Access**: Only after a 2-of-2 (or M-of-N) approval does the contract grant `REGULATOR_ROLE` the permission to decrypt the specific transaction amount through the Zama Gateway.
 
+## Modern UX & UI
+
+Veilr has been redesigned with a premium, monochromatic design language inspired by modern infrastructure tools.
+
+-   **Monochromatic Aesthetic**: A clean, near-black interface with refined violet accents and high-fidelity typography (Inter).
+-   **Reactive Feedback**: Integrated `react-hot-toast` for real-time transaction lifecycle tracking—from client-side encryption to on-chain confirmation.
+-   **Immediate Responsiveness**: Submission buttons provide zero-latency visual cues, ensuring users are never left guessing during heavy FHE computations.
+-   **Smart Wallet Management**: Automated network enforcement for Sepolia Testnet and secure session-clearing on disconnect.
+
 ## Technical Stack
+
 -   **FHE VM**: Zama Protocol (Sepolia Testnet)
 -   **Encryption**: TFHE (Threshold Fully Homomorphic Encryption)
--   **Frontend**: React + @fhevm/sdk
+-   **Frontend**: React (Vite) + @fhevm/sdk
+-   **UI/UX**: TailwindCSS + Lucide Icons + React Hot Toast
 -   **Smart Contracts**: Solidity (0.8.24) with `fhevm/solidity`
 
 ## Getting Started
@@ -49,18 +69,13 @@ cd frontend && npm install
 npx hardhat run scripts/deploy.ts --network zama
 ```
 
-### 3. Integration for Developers
-Lending protocols can integrate the Veilr API using the `IVeilrCredit.sol` interface:
-```solidity
-import "./IVeilrCredit.sol";
-
-function validateUser(address user) external {
-    euint8 tier = IVeilrCredit(veilrAddress).requestCreditTier(user, address(this));
-    // Decrypt tier off-chain via Relayer SDK to make lending decision
-}
+### 3. Run Frontend
+```bash
+cd frontend && npm run dev
 ```
 
 ## Deployed Contract
+
 -   **Network:** Zama Protocol Sepolia Testnet (Chain ID 9000)
 -   **Contract Address:** `0xd667A750C3dba0436eBd47dC5a57B6D7BA49045e`
 

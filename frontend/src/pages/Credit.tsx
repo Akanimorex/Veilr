@@ -3,7 +3,7 @@ import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
 import { getAddress } from 'ethers';
 import { toast } from 'react-hot-toast';
-import { Loader2, ChevronRight, Clock, Lock } from 'lucide-react';
+import { Loader2, Clock, Lock } from 'lucide-react';
 
 export const Credit = () => {
     const { account, instance, rawProvider, isInitializing } = useFhevm();
@@ -53,7 +53,7 @@ export const Credit = () => {
             const eip712 = instance.createEIP712(keypair.publicKey, [getAddress(CONTRACT_ADDRESS)], startTimestamp, durationDays);
             const signer = await (rawProvider || (window as any).ethereum).request({
                 method: 'eth_signTypedData_v4',
-                params: [account, JSON.stringify(eip712, (k, v) => typeof v === 'bigint' ? v.toString() : v)],
+                params: [account, JSON.stringify(eip712, (_, v) => typeof v === 'bigint' ? v.toString() : v)],
             });
             const newAuth = { keypair, signer, startTimestamp, durationDays };
             setAuthData(newAuth);

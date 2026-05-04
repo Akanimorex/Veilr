@@ -6,11 +6,10 @@ import { Link } from 'react-router-dom';
 import { getAddress } from 'ethers';
 import { toast } from 'react-hot-toast';
 
-// Stub for missing setPoolBalance reference in the original hook
-const noop = (_: any) => {};
 
+// Dashboard component
 export const Dashboard = () => {
-    const { account, instance, provider, rawProvider, isInitializing } = useFhevm();
+    const { account, instance, rawProvider, isInitializing } = useFhevm();
     const { getContract, CONTRACT_ADDRESS } = useContract();
 
     const [balance, setBalance] = useState<string | null>(null);
@@ -56,7 +55,7 @@ export const Dashboard = () => {
             const eip712 = instance.createEIP712(keypair.publicKey, [getAddress(CONTRACT_ADDRESS)], startTimestamp, durationDays);
             const signer = await (rawProvider || (window as any).ethereum).request({
                 method: 'eth_signTypedData_v4',
-                params: [account, JSON.stringify(eip712, (key, value) =>
+                params: [account, JSON.stringify(eip712, (_, value) =>
                     typeof value === 'bigint' ? value.toString() : value
                 )],
             });
