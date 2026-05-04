@@ -8,7 +8,10 @@ export interface FhevmContextType {
   rawProvider: any | null;
   account: string | null;
   isInitializing: boolean;
+  isWrongNetwork: boolean;
   connect: () => Promise<void>;
+  disconnect: () => void;
+  switchNetwork: () => Promise<void>;
 }
 
 const FhevmContext = createContext<FhevmContextType>({
@@ -17,7 +20,10 @@ const FhevmContext = createContext<FhevmContextType>({
   rawProvider: null,
   account: null,
   isInitializing: false,
+  isWrongNetwork: false,
   connect: async () => {},
+  disconnect: () => {},
+  switchNetwork: async () => {},
 });
 
 export const useFhevm = () => useContext(FhevmContext);
@@ -28,6 +34,44 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   const [rawProvider, setRawProvider] = useState<any | null>(null);
   const [account, setAccount] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isWrongNetwork, setIsWrongNetwork] = useState(false);
+
+  const REQUIRED_CHAIN_ID = 11155111;
+
+  const switchNetwork = async () => {
+    if (!rawProvider) return;
+    try {
+        await rawProvider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0xaa36a7' }],
+        });
+    } catch (switchError: any) {
+        if (switchError.code === 4902) {
+            await rawProvider.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                    chainId: '0xaa36a7',
+                    chainName: 'Sepolia Testnet',
+                    rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+                    nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 }
+                }]
+            });
+        }
+    }
+  };
+
+  const disconnect = () => {
+    setAccount(null);
+    setInstance(null);
+    setProvider(null);
+    setRawProvider(null);
+    localStorage.removeItem('walletConnected');
+    // Clear any cached authorization for this specific user session
+    const keys = Object.keys(sessionStorage);
+    keys.forEach(k => {
+        if (k.startsWith('veilr_auth_')) sessionStorage.removeItem(k);
+    });
+  };
 
   const connect = async () => {
     let activeProvider = window.ethereum;
@@ -87,28 +131,14 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
                 return;
             }
 
-            // 1. Ensure Network
-            const chainId = 11155111;
+            // 1. Check Network
             const network = await provider.getNetwork();
-            if (Number(network.chainId) !== chainId) {
-                try {
-                    await rawProvider.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: '0xaa36a7' }],
-                    });
-                } catch (switchError: any) {
-                    if (switchError.code === 4902) {
-                        await rawProvider.request({
-                            method: 'wallet_addEthereumChain',
-                            params: [{
-                                chainId: '0xaa36a7',
-                                chainName: 'Sepolia Testnet',
-                                rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
-                                nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 }
-                            }]
-                        });
-                    }
-                }
+            if (Number(network.chainId) !== REQUIRED_CHAIN_ID) {
+                setIsWrongNetwork(true);
+                setIsInitializing(false);
+                return;
+            } else {
+                setIsWrongNetwork(false);
             }
 
             // 2. Init SDK
@@ -166,7 +196,7 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <FhevmContext.Provider value={{ instance, provider, rawProvider, account, isInitializing, connect }}>
+    <FhevmContext.Provider value={{ instance, provider, rawProvider, account, isInitializing, isWrongNetwork, connect, disconnect, switchNetwork }}>
       {children}
     </FhevmContext.Provider>
   );

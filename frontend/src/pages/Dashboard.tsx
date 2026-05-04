@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
-import { TransactionHistory } from '../components/TransactionHistory';
 import { Shield, RefreshCw, Loader2, BadgeCheck, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getAddress } from 'ethers';
+import { toast } from 'react-hot-toast';
 
 export const Dashboard = () => {
     const { account, instance, provider, rawProvider, isInitializing } = useFhevm();
@@ -200,55 +200,43 @@ export const Dashboard = () => {
 
     const handleMint = async () => {
         if (!account) {
-            alert("Please connect your wallet first!");
+            toast.error("Please connect your wallet first!");
             return;
         }
-        if (isInitializing || !instance) {
-            return;
-        }
-        console.log(`Minting 1000 ${selectedCurrency}`);
+        if (isInitializing || !instance) return;
+
+        const loadingToast = toast.loading(`Minting 1000 ${selectedCurrency}...`);
+        
         try {
             setLoading(true);
-            setDepositStatus(`Minting ${selectedCurrency}...`);
             const contract = await getContract(true);
-            
             const tx = await contract.mint(selectedCurrency, 1000);
             
-            setDepositStatus('Awaiting On-chain Confirmation...');
+            toast.loading('Awaiting On-chain Confirmation...', { id: loadingToast });
             await tx.wait();
 
-            // The Zama coprocessor needs time to relay the FHE computation from Sepolia
-            // to the Gateway chain before the Relayer can decrypt it.
-            // Typical sync time: 30–90s on testnet. We wait 30s then poll every 15s.
-            const INITIAL_WAIT_MS = 30_000;
-            const POLL_INTERVAL_MS = 15_000;
-            const MAX_POLLS = 12; // 30s + 12×15s = ~3 minutes total
+            toast.loading('Transaction Confirmed. Syncing with FHE Gateway...', { id: loadingToast });
 
-            setDepositStatus('Waiting for Gateway sync (30s)...');
-            await new Promise(r => setTimeout(r, INITIAL_WAIT_MS));
-
+            // Poll for balance update
+            const MAX_POLLS = 10;
             for (let i = 0; i < MAX_POLLS; i++) {
-                const attempt = i + 1;
-                setDepositStatus(`Syncing Gateway... attempt ${attempt}/${MAX_POLLS}`);
-                
                 await fetchBalances();
-                
-                // If balance is now set, we assume sync is done
-                if (balance !== '0.00' && balance !== null) {
+                if (balance !== '0.00' && balance !== null && !balance.includes('Syncing')) {
+                    toast.success(`${selectedCurrency} Minted Successfully!`, { id: loadingToast });
+                    setLoading(false);
                     setDepositStatus('');
-                    break;
+                    return;
                 }
-
-                if (i < MAX_POLLS - 1) {
-                    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-                }
+                await new Promise(r => setTimeout(r, 10000));
             }
-            setDepositStatus('');
-        } catch (error) {
+            
+            toast.success('Minting complete. It may take a moment to reflect.', { id: loadingToast });
+        } catch (error: any) {
             console.error("Mint error:", error);
-            setDepositStatus('');
-            setLoading(false);
+            toast.error(error?.message || "Minting failed", { id: loadingToast });
         }
+        setLoading(false);
+        setDepositStatus('');
     };
 
     return (
@@ -380,7 +368,6 @@ export const Dashboard = () => {
                         </button>
                     </div>
 
-                    <TransactionHistory />
                 </>
             )}
         </div>

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { getAddress } from 'ethers';
 import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
+import { toast } from 'react-hot-toast';
+import { Loader2, ShieldCheck, Send as SendIcon } from 'lucide-react';
 
 export const SendForm = () => {
     const { instance, account, isInitializing } = useFhevm();
@@ -11,46 +13,58 @@ export const SendForm = () => {
     const [amount, setAmount] = useState('');
     const [currency, setCurrency] = useState('cUSDT');
     const [status, setStatus] = useState<'' | 'Encrypting' | 'Submitting' | 'Confirmed'>('');
+    const [isProcessing, setIsProcessing] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!instance || !account || isInitializing) return;
+        setIsProcessing(true);
+        setStatus('Encrypting');
+        
+        // Give React a moment to render the loading state before CPU-heavy work
+        await new Promise(r => setTimeout(r, 50));
 
+        if (!instance || !account || isInitializing) {
+            toast.error("FHEVM not ready or wallet not connected");
+            setStatus('');
+            setIsProcessing(false);
+            return;
+        }
+
+        const loadingToast = toast.loading("Encrypting transfer data...");
+        
         try {
-            setStatus('Encrypting');
-            
             const amountNum = Math.floor(parseFloat(amount));
 
-            // FHEVM Encryption using relayer SDK
             const accountFixed = getAddress(account.trim());
             const contractFixed = getAddress(CONTRACT_ADDRESS.trim());
             const recipientFixed = getAddress(recipient.trim());
 
             // Build encrypted input
             let input = instance.createEncryptedInput(contractFixed, accountFixed);
-            
-            // Add inputs in order: recipient (address), amount (uint64)
             input.addAddress(recipientFixed);
             input.add64(amountNum);
 
-            // Encrypt and generate proof
             const { handles, inputProof } = await input.encrypt();
 
+            toast.loading('Submitting to network...', { id: loadingToast });
             setStatus('Submitting');
             
             const contract = await getContract(true);
-
-            // Send transaction: send(symbol, recipientHandle, amountHandle, proof)
             const tx = await contract.send(currency, handles[0], handles[1], inputProof);
+            
+            toast.loading('Awaiting on-chain confirmation...', { id: loadingToast });
             await tx.wait();
 
+            toast.success('Confidential Transfer Sent!', { id: loadingToast });
             setStatus('Confirmed');
             setAmount('');
             setRecipient('');
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
+            toast.error(error?.message || "Transfer failed", { id: loadingToast });
             setStatus('');
         }
+        setIsProcessing(false);
     };
 
     return (
@@ -102,14 +116,19 @@ export const SendForm = () => {
 
             <button 
                 type="submit" 
-                disabled={!account || !!status || isInitializing || !instance}
-                className={`w-full py-4 rounded-xl font-medium transition-all ${
-                    !account ? 'bg-primary/50 cursor-not-allowed opacity-50' 
-                    : (!!status || isInitializing) ? 'bg-primary/80 animate-pulse'
-                    : 'bg-primary hover:bg-primary-hover active:scale-95'
+                disabled={!account || isProcessing || isInitializing || !instance}
+                className={`w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-3 ${
+                    (!account || isProcessing || isInitializing) ? 'bg-primary/50 cursor-not-allowed opacity-70' 
+                    : 'bg-primary hover:bg-primary-hover active:scale-95 shadow-lg shadow-primary/20'
                 }`}
             >
-                {isInitializing ? "Initializing FHE..." : (status || (account ? "Encrypt & Send" : "Connect Wallet to Send"))}
+                {(isProcessing || isInitializing) && (
+                    <Loader2 size={20} className="animate-spin" />
+                )}
+                {isInitializing ? "Initializing FHE..." : 
+                 status === 'Encrypting' ? "Encrypting Data..." : 
+                 status === 'Submitting' ? "Submitting to Network..." :
+                 (account ? "Encrypt & Send" : "Connect Wallet")}
             </button>
 
             {status === 'Confirmed' && (

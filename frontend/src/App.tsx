@@ -1,11 +1,37 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { FhevmProvider } from './hooks/useFhevm';
+import { Toaster } from 'react-hot-toast';
 import { WalletConnect } from './components/WalletConnect';
 import { Dashboard } from './pages/Dashboard';
 import { Send } from './pages/Send';
 import { Compliance } from './pages/Compliance';
 import { Credit } from './pages/Credit';
-import { ShieldAlert, BadgeCheck, Send as SendIcon } from 'lucide-react';
+import { ShieldAlert, BadgeCheck, Send as SendIcon, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useFhevm } from './hooks/useFhevm';
+
+const NetworkBanner = () => {
+  const { isWrongNetwork, switchNetwork, account } = useFhevm();
+
+  if (!account || !isWrongNetwork) return null;
+
+  return (
+    <div className="bg-red-500/10 border-b border-red-500/20 py-3 px-6 animate-in slide-in-from-top duration-500">
+      <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-3 text-red-400">
+          <AlertTriangle size={18} />
+          <p className="text-sm font-bold">Wrong Network: Please connect to Sepolia Testnet</p>
+        </div>
+        <button 
+          onClick={switchNetwork}
+          className="flex items-center gap-2 px-4 py-1.5 bg-red-500 text-white rounded-lg text-xs font-bold hover:bg-red-600 transition-colors"
+        >
+          <RefreshCw size={14} />
+          Switch to Sepolia
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const Navigation = () => {
   const location = useLocation();
@@ -58,8 +84,18 @@ const Navigation = () => {
 function App() {
   return (
     <FhevmProvider>
+      <Toaster position="top-right" toastOptions={{
+        style: {
+          background: '#1A1D23',
+          color: '#fff',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: '1rem',
+          fontSize: '0.875rem'
+        }
+      }} />
       <Router>
         <div className="min-h-screen flex flex-col selection:bg-primary/30">
+          <NetworkBanner />
           <Navigation />
           <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-12">
             <Routes>

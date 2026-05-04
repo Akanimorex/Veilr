@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
 import { getAddress } from 'ethers';
+import { toast } from 'react-hot-toast';
 import { 
     ShieldCheck, 
     ArrowRight, 
@@ -29,7 +30,7 @@ export const Credit = () => {
     });
 
     // UI State
-    const [status, setStatus] = useState<'' | 'Encrypting' | 'Signing' | 'Computing' | 'Complete'>('');
+    const [status, setStatus] = useState<'' | 'Signing' | 'Computing' | 'Complete'>('');
     const [decryptedTier, setDecryptedTier] = useState<number | null>(null);
     const [history, setHistory] = useState<any[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
@@ -137,8 +138,13 @@ export const Credit = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!instance || !account) return;
+        if (!instance || !account) {
+            toast.error("Please connect your wallet first!");
+            return;
+        }
 
+        const loadingToast = toast.loading("Initiating Private Credit Application...");
+        
         try {
             setStatus('Signing');
             const contractFixed = getAddress(CONTRACT_ADDRESS);
@@ -147,26 +153,28 @@ export const Credit = () => {
             const contract = await getContract(true);
             const tx = await contract.applyForCredit();
             
+            toast.loading('Computing Reputation Tier via FHE...', { id: loadingToast });
             setStatus('Computing');
             await tx.wait();
 
             // Fetch the new result
             await fetchHistory();
             setStatus('Complete');
+            toast.success('Reputation Verification Submitted!', { id: loadingToast });
             
             // Decrypt the result if authorized
             let activeAuth = authData;
             if (!isAuthValid(activeAuth)) {
+                toast.loading('Authorizing to decrypt result...', { id: loadingToast });
                 activeAuth = await handleAuthorize();
             }
 
             if (activeAuth) {
+                toast.loading('Decrypting Verification Tier...', { id: loadingToast });
                 // Get the app ID we just created (latest from history)
                 const latestApp = await contract.applicationCount() - 1n;
                 const appData = await contract.applications(latestApp);
                 
-                console.log("Decrypting stored tier handle:", appData.encryptedTier);
-
                 const decryptResult = await instance.userDecrypt(
                     [{ 
                         handle: "0x" + BigInt(appData.encryptedTier).toString(16).padStart(64, '0'), 
@@ -183,10 +191,11 @@ export const Credit = () => {
                 
                 const val = Number(Object.values(decryptResult)[0]);
                 setDecryptedTier(val);
+                toast.success('Reputation Verified!', { id: loadingToast });
             }
-
-        } catch (e) {
+        } catch (e: any) {
             console.error("Application error", e);
+            toast.error(e?.message || "Application failed", { id: loadingToast });
             setStatus('');
         }
     };
