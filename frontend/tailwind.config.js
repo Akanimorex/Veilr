@@ -6,17 +6,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#0B0A10',
-        surface: '#15141D',
+        background: '#0a0a0a',
+        surface: '#111111',
+        'surface-2': '#1a1a1a',
         primary: {
-          DEFAULT: '#8B5CF6',
-          hover: '#7C3AED',
+          DEFAULT: '#a78bfa',
+          hover: '#c4b5fd',
         },
         text: {
-          main: '#F8FAFC',
-          muted: '#94A3B8'
+          main: '#fafafa',
+          muted: '#71717a',
+          subtle: '#3f3f46',
         }
-      }
+      },
+      fontFamily: {
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+      },
     },
   },
   plugins: [],

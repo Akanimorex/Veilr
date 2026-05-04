@@ -6,27 +6,25 @@ import { Dashboard } from './pages/Dashboard';
 import { Send } from './pages/Send';
 import { Compliance } from './pages/Compliance';
 import { Credit } from './pages/Credit';
-import { ShieldAlert, BadgeCheck, Send as SendIcon, AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useFhevm } from './hooks/useFhevm';
 
 const NetworkBanner = () => {
   const { isWrongNetwork, switchNetwork, account } = useFhevm();
-
   if (!account || !isWrongNetwork) return null;
-
   return (
-    <div className="bg-red-500/10 border-b border-red-500/20 py-3 px-6 animate-in slide-in-from-top duration-500">
+    <div className="border-b border-red-500/10 bg-red-500/5 py-2.5 px-6">
       <div className="max-w-6xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-3 text-red-400">
-          <AlertTriangle size={18} />
-          <p className="text-sm font-bold">Wrong Network: Please connect to Sepolia Testnet</p>
+        <div className="flex items-center gap-2.5 text-red-400">
+          <AlertTriangle size={14} strokeWidth={2.5} />
+          <p className="text-xs font-medium">Connected to wrong network. Veilr requires Sepolia Testnet.</p>
         </div>
-        <button 
+        <button
           onClick={switchNetwork}
-          className="flex items-center gap-2 px-4 py-1.5 bg-red-500 text-white rounded-lg text-xs font-bold hover:bg-red-600 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-md text-xs font-semibold transition-colors border border-red-500/20"
         >
-          <RefreshCw size={14} />
-          Switch to Sepolia
+          <RefreshCw size={12} />
+          Switch Network
         </button>
       </div>
     </div>
@@ -35,43 +33,41 @@ const NetworkBanner = () => {
 
 const Navigation = () => {
   const location = useLocation();
-  const isActive = (path: string) => location.pathname === path ? "text-white" : "text-text-muted hover:text-white";
+  const isActive = (path: string) => location.pathname === path;
 
   return (
-    <nav className="border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-        <div className="flex items-center gap-12">
-          <Link to="/" className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <ShieldAlert size={18} className="text-white" />
+    <nav className="border-b border-white/[0.06] bg-background/80 backdrop-blur-xl sticky top-0 z-50">
+      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        {/* Logo */}
+        <div className="flex items-center gap-8">
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="h-6 w-6 rounded-md bg-primary/15 border border-primary/20 flex items-center justify-center">
+              <div className="h-2.5 w-2.5 rounded-sm bg-primary" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">Veilr.</span>
+            <span className="text-sm font-semibold tracking-tight text-white">Veilr</span>
+            <span className="text-[10px] font-bold text-text-muted/60 uppercase tracking-widest border border-white/10 rounded px-1.5 py-0.5">Sepolia</span>
           </Link>
-          
-          <div className="flex items-center gap-6 text-sm font-medium">
-            <Link 
-              to="/credit" 
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all ${
-                isActive('/credit') === 'text-white'
-                  ? 'bg-primary text-white shadow-lg shadow-primary/30'
-                  : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'
-              }`}
-            >
-              <BadgeCheck size={16} />
-              Private Credit
-            </Link>
-            <Link to="/" className={`transition-colors ${isActive('/')}`}>Dashboard</Link>
-            
-            <div className="h-4 w-px bg-white/10 mx-2" />
-            
-            <Link to="/send" className={`transition-colors flex items-center gap-2 ${isActive('/send')}`}>
-              <SendIcon size={14} /> Encrypted Send
-            </Link>
-            
-            <Link to="/compliance" className={`transition-colors flex items-center gap-2 ${isActive('/compliance')}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-              Compliance
-            </Link>
+
+          {/* Nav Links */}
+          <div className="flex items-center gap-1">
+            {[
+              { path: '/', label: 'Dashboard' },
+              { path: '/credit', label: 'Credit' },
+              { path: '/send', label: 'Send' },
+              { path: '/compliance', label: 'Compliance' },
+            ].map(({ path, label }) => (
+              <Link
+                key={path}
+                to={path}
+                className={`px-3 py-1.5 rounded-md text-sm transition-colors font-medium ${
+                  isActive(path)
+                    ? 'text-white bg-white/[0.06]'
+                    : 'text-text-muted hover:text-white hover:bg-white/[0.04]'
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </div>
 
@@ -84,20 +80,28 @@ const Navigation = () => {
 function App() {
   return (
     <FhevmProvider>
-      <Toaster position="top-right" toastOptions={{
-        style: {
-          background: '#1A1D23',
-          color: '#fff',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '1rem',
-          fontSize: '0.875rem'
-        }
-      }} />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: '#18181b',
+            color: '#fafafa',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '10px',
+            fontSize: '0.8125rem',
+            fontFamily: 'Inter, sans-serif',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          },
+          success: {
+            iconTheme: { primary: '#a78bfa', secondary: '#18181b' },
+          },
+        }}
+      />
       <Router>
-        <div className="min-h-screen flex flex-col selection:bg-primary/30">
+        <div className="min-h-screen flex flex-col">
           <NetworkBanner />
           <Navigation />
-          <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-12">
+          <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-10">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/send" element={<Send />} />

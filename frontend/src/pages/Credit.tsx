@@ -3,33 +3,13 @@ import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
 import { getAddress } from 'ethers';
 import { toast } from 'react-hot-toast';
-import { 
-    ShieldCheck, 
-    ArrowRight, 
-    ChevronRight, 
-    Info, 
-    CheckCircle2, 
-    AlertCircle, 
-    Clock, 
-    History,
-    Activity,
-    Lock,
-    Zap,
-    Loader2
-} from 'lucide-react';
+import { Loader2, ChevronRight, Clock, Lock } from 'lucide-react';
 
 export const Credit = () => {
     const { account, instance, rawProvider, isInitializing } = useFhevm();
     const { getContract, CONTRACT_ADDRESS } = useContract();
 
-    // Verified Stats (Fetched from Chain)
-    const [verifiedStats, setVerifiedStats] = useState({
-        balance: '...',
-        activity: '...',
-        age: '...'
-    });
-
-    // UI State
+    const [verifiedStats, setVerifiedStats] = useState({ activity: '...', age: '...' });
     const [status, setStatus] = useState<'' | 'Signing' | 'Computing' | 'Complete'>('');
     const [decryptedTier, setDecryptedTier] = useState<number | null>(null);
     const [history, setHistory] = useState<any[]>([]);
@@ -40,38 +20,26 @@ export const Credit = () => {
         if (!account) return;
         try {
             const contract = await getContract();
-            
-            // 1. Get User-specific Nonce (Activity)
             const nonce = await contract.nextTxNonce(account);
-            
-            // 2. Get Join Date (Age)
             const jd = await contract.joinDate(account);
-            let ageStr = "First Visit";
+            let ageStr = "First visit";
             if (jd > 0n) {
                 const diff = Math.floor(Date.now() / 1000) - Number(jd);
                 const days = Math.floor(diff / 86400);
-                ageStr = days > 0 ? `${days} Days` : "Joined Today";
+                ageStr = days > 0 ? `${days}d` : "Today";
             }
-
-            setVerifiedStats({
-                balance: "Encrypted",
-                activity: `${nonce} Txns`,
-                age: ageStr
-            });
+            setVerifiedStats({ activity: `${nonce}`, age: ageStr });
         } catch (e) {
             console.error("Failed to fetch verified stats", e);
         }
     };
 
-    useEffect(() => {
-        if (account) fetchVerifiedStats();
-    }, [account]);
+    useEffect(() => { if (account) fetchVerifiedStats(); }, [account]);
 
-    // Load auth from session
     useEffect(() => {
         if (account && CONTRACT_ADDRESS) {
-            const sessionKey = `veilr_auth_${account.toLowerCase()}_${CONTRACT_ADDRESS.toLowerCase()}`;
-            const stored = sessionStorage.getItem(sessionKey);
+            const key = `veilr_auth_${account.toLowerCase()}_${CONTRACT_ADDRESS.toLowerCase()}`;
+            const stored = sessionStorage.getItem(key);
             if (stored) setAuthData(JSON.parse(stored));
         }
     }, [account, CONTRACT_ADDRESS]);
@@ -81,7 +49,7 @@ export const Credit = () => {
         try {
             const keypair = instance.generateKeypair();
             const startTimestamp = Math.floor(Date.now() / 1000) - 3600;
-            const durationDays = 7; 
+            const durationDays = 7;
             const eip712 = instance.createEIP712(keypair.publicKey, [getAddress(CONTRACT_ADDRESS)], startTimestamp, durationDays);
             const signer = await (rawProvider || (window as any).ethereum).request({
                 method: 'eth_signTypedData_v4',
@@ -89,8 +57,8 @@ export const Credit = () => {
             });
             const newAuth = { keypair, signer, startTimestamp, durationDays };
             setAuthData(newAuth);
-            const sessionKey = `veilr_auth_${account.toLowerCase()}_${CONTRACT_ADDRESS.toLowerCase()}`;
-            sessionStorage.setItem(sessionKey, JSON.stringify(newAuth));
+            const key = `veilr_auth_${account.toLowerCase()}_${CONTRACT_ADDRESS.toLowerCase()}`;
+            sessionStorage.setItem(key, JSON.stringify(newAuth));
             return newAuth;
         } catch (e) {
             console.error("Auth failed", e);
@@ -101,8 +69,7 @@ export const Credit = () => {
     const isAuthValid = (auth: any) => {
         if (!auth) return false;
         const now = Math.floor(Date.now() / 1000);
-        const expiry = auth.startTimestamp + (auth.durationDays * 86400);
-        return now < expiry;
+        return now < auth.startTimestamp + (auth.durationDays * 86400);
     };
 
     const fetchHistory = async () => {
@@ -112,86 +79,58 @@ export const Credit = () => {
             const contract = await getContract();
             const filter = contract.filters.CreditApplicationSubmitted(null, account);
             const events = await contract.queryFilter(filter, -10000);
-            
             const apps = [];
             for (const event of events) {
                 const appId = Number((event as any).args.appId);
                 const timestamp = Number((event as any).args.timestamp);
                 const appData = await contract.applications(appId);
-                apps.push({
-                    id: appId,
-                    date: new Date(timestamp * 1000).toLocaleDateString(),
-                    scored: appData.scored,
-                    status: appData.scored ? 'Processed' : 'Pending'
-                });
+                apps.push({ id: appId, date: new Date(timestamp * 1000).toLocaleDateString(), scored: appData.scored, status: appData.scored ? 'Processed' : 'Pending' });
             }
             setHistory(apps.sort((a, b) => b.id - a.id));
-        } catch (e) {
-            console.error("History fetch error", e);
-        }
+        } catch (e) { console.error("History fetch error", e); }
         setLoadingHistory(false);
     };
 
-    useEffect(() => {
-        if (account) fetchHistory();
-    }, [account]);
+    useEffect(() => { if (account) fetchHistory(); }, [account]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!instance || !account) {
-            toast.error("Please connect your wallet first!");
-            return;
-        }
+        if (!instance || !account) { toast.error("Please connect your wallet first!"); return; }
 
-        const loadingToast = toast.loading("Initiating Private Credit Application...");
-        
+        const loadingToast = toast.loading("Initiating credit application...");
         try {
             setStatus('Signing');
             const contractFixed = getAddress(CONTRACT_ADDRESS);
             const accountFixed = getAddress(account);
-
             const contract = await getContract(true);
             const tx = await contract.applyForCredit();
-            
-            toast.loading('Computing Reputation Tier via FHE...', { id: loadingToast });
+
+            toast.loading('Computing reputation tier via FHE...', { id: loadingToast });
             setStatus('Computing');
             await tx.wait();
 
-            // Fetch the new result
             await fetchHistory();
             setStatus('Complete');
-            toast.success('Reputation Verification Submitted!', { id: loadingToast });
-            
-            // Decrypt the result if authorized
+            toast.success('Application submitted', { id: loadingToast });
+
             let activeAuth = authData;
             if (!isAuthValid(activeAuth)) {
-                toast.loading('Authorizing to decrypt result...', { id: loadingToast });
+                toast.loading('Authorizing decryption...', { id: loadingToast });
                 activeAuth = await handleAuthorize();
             }
 
             if (activeAuth) {
-                toast.loading('Decrypting Verification Tier...', { id: loadingToast });
-                // Get the app ID we just created (latest from history)
+                toast.loading('Decrypting tier...', { id: loadingToast });
                 const latestApp = await contract.applicationCount() - 1n;
                 const appData = await contract.applications(latestApp);
-                
                 const decryptResult = await instance.userDecrypt(
-                    [{ 
-                        handle: "0x" + BigInt(appData.encryptedTier).toString(16).padStart(64, '0'), 
-                        contractAddress: contractFixed 
-                    }],
-                    activeAuth.keypair.privateKey,
-                    activeAuth.keypair.publicKey,
-                    activeAuth.signer,
-                    [contractFixed],
-                    accountFixed,
-                    activeAuth.startTimestamp,
-                    activeAuth.durationDays
+                    [{ handle: "0x" + BigInt(appData.encryptedTier).toString(16).padStart(64, '0'), contractAddress: contractFixed }],
+                    activeAuth.keypair.privateKey, activeAuth.keypair.publicKey, activeAuth.signer,
+                    [contractFixed], accountFixed, activeAuth.startTimestamp, activeAuth.durationDays
                 );
-                
                 const val = Number(Object.values(decryptResult)[0]);
                 setDecryptedTier(val);
-                toast.success('Reputation Verified!', { id: loadingToast });
+                toast.success('Reputation verified', { id: loadingToast });
             }
         } catch (e: any) {
             console.error("Application error", e);
@@ -200,218 +139,152 @@ export const Credit = () => {
         }
     };
 
+    const tierConfig: Record<number, { label: string; sub: string; color: string; dot: string }> = {
+        1: { label: 'Tier 1 — Elite', sub: 'High-activity, high-liquidity participant', color: 'text-emerald-400', dot: 'bg-emerald-400' },
+        2: { label: 'Tier 2 — Trusted', sub: 'Solid on-chain footprint and healthy portfolio', color: 'text-amber-400', dot: 'bg-amber-400' },
+        3: { label: 'Tier 3 — Emerging', sub: 'Increase activity or portfolio size to rank higher', color: 'text-red-400', dot: 'bg-red-400' },
+    };
+
     return (
-        <div className="max-w-4xl mx-auto space-y-12 pb-20 animate-in fade-in duration-700">
-            {/* Section 1: Hero Banner */}
-            <div className="relative bg-gradient-to-br from-primary/30 via-surface to-surface border border-primary/20 rounded-3xl p-10 overflow-hidden">
-                <div className="relative z-10 max-w-2xl">
-                    <div className="flex items-center gap-2 text-primary mb-4">
-                        <ShieldCheck size={20} />
-                        <span className="text-sm font-bold uppercase tracking-widest">Privacy-First Credit</span>
-                    </div>
-                    <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
-                        Strict On-Chain <br/>
-                        <span className="text-primary">Verification</span>
-                    </h1>
-                    <p className="text-text-muted text-lg leading-relaxed mb-6">
-                        We've upgraded our metrics. Eligibility is now determined by your multi-asset portfolio and historical engagement.
-                    </p>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <p className="text-primary font-bold text-xs uppercase mb-1">Tier 1 Target</p>
-                            <p className="text-white text-xs">3+ tokens (1000+ each) + 10 Txns + 5 Days</p>
-                        </div>
-                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <p className="text-amber-400 font-bold text-xs uppercase mb-1">Tier 2 Target</p>
-                            <p className="text-white text-xs">2+ tokens (500+ each) + 5 Txns + 3 Days</p>
-                        </div>
-                    </div>
-                </div>
-                
-                {/* Abstract visual decor */}
-                <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-primary/10 to-transparent pointer-events-none" />
+        <div className="max-w-4xl space-y-8 pb-16">
+            {/* Header */}
+            <div className="border-b border-white/[0.06] pb-6">
+                <h1 className="text-xl font-semibold text-white tracking-tight mb-1">Private Credit</h1>
+                <p className="text-sm text-text-muted">
+                    Prove creditworthiness without revealing your financial data. Scoring is computed privately via FHE.
+                </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Section 2: Application Form */}
-                <div className="lg:col-span-2 space-y-6">
-                    <form onSubmit={handleSubmit} className="bg-surface border border-white/5 rounded-3xl p-8 space-y-8">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-semibold text-white">Application Summary</h2>
-                            <div className="flex items-center gap-2 text-text-muted">
-                                <Info size={16} />
-                                <span className="text-xs">End-to-end Encrypted</span>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* ── Application Form ── */}
+                <div className="lg:col-span-2 space-y-4">
+                    {/* Criteria */}
+                    <div className="bg-surface border border-white/[0.06] rounded-2xl p-5">
+                        <p className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-4">Scoring Criteria</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+                                <p className="text-[10px] font-bold text-primary/80 uppercase tracking-widest mb-1">Tier 1</p>
+                                <p className="text-xs text-white/60 leading-relaxed">3+ tokens ≥1000 each<br/>10+ txns · 5+ days active</p>
+                            </div>
+                            <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+                                <p className="text-[10px] font-bold text-amber-400/80 uppercase tracking-widest mb-1">Tier 2</p>
+                                <p className="text-xs text-white/60 leading-relaxed">2+ tokens ≥500 each<br/>5+ txns · 3+ days active</p>
                             </div>
                         </div>
+                    </div>
 
-                        <div className="space-y-8">
-                            {/* Multi-Token Balances (Verified) */}
-                            <div className="space-y-4">
-                                <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Multi-Token Portfolio</label>
-                                <div className="p-4 bg-background border border-primary/20 rounded-2xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary"><ShieldCheck size={16}/></div>
-                                        <span className="text-white font-bold">Scanning All Vaults...</span>
-                                    </div>
-                                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-widest">Multi-Asset Scan</span>
+                    {/* Stats */}
+                    <div className="bg-surface border border-white/[0.06] rounded-2xl p-5">
+                        <p className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-4">Your On-Chain Profile</p>
+                        <div className="grid grid-cols-3 gap-3">
+                            {[
+                                { label: 'Transactions', value: verifiedStats.activity, sub: 'verified' },
+                                { label: 'Active Since', value: verifiedStats.age, sub: 'on-chain' },
+                                { label: 'Portfolio', value: 'Encrypted', sub: 'multi-asset scan' },
+                            ].map(({ label, value, sub }) => (
+                                <div key={label} className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+                                    <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold mb-1.5">{label}</p>
+                                    <p className="text-base font-bold text-white tabular-nums">{value}</p>
+                                    <p className="text-[10px] text-text-subtle mt-0.5">{sub}</p>
                                 </div>
-                            </div>
-
-                            {/* Tx Activity (Verified) */}
-                            <div className="space-y-4">
-                                <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Transaction Activity</label>
-                                <div className="p-4 bg-background border border-primary/20 rounded-2xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Activity size={16}/></div>
-                                        <span className="text-white font-bold">{verifiedStats.activity}</span>
-                                    </div>
-                                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-widest">Real-Time Sync</span>
-                                </div>
-                            </div>
-
-                            {/* Wallet Age (Verified) */}
-                            <div className="space-y-4">
-                                <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Active History</label>
-                                <div className="p-4 bg-background border border-primary/20 rounded-2xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Clock size={16}/></div>
-                                        <span className="text-white font-bold">{verifiedStats.age}</span>
-                                    </div>
-                                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-widest">History Logged</span>
-                                </div>
-                            </div>
+                            ))}
                         </div>
+                    </div>
 
-                        <div className="pt-4">
-                            <button
-                                type="submit"
-                                disabled={!account || !!status || isInitializing || !instance}
-                                className={`w-full py-5 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-3 ${
-                                    !account ? 'bg-primary/50 cursor-not-allowed' :
-                                    (status || isInitializing) ? 'bg-primary/80 animate-pulse' : 'bg-primary hover:bg-primary-hover active:scale-[0.98] shadow-lg shadow-primary/20'
-                                }`}
-                            >
-                                {(status === 'Encrypting' || status === 'Signing' || status === 'Computing' || isInitializing) && <Loader2 className="animate-spin" size={20} />}
-                                {status === 'Complete' && <CheckCircle2 size={20} />}
-                                
-                                {isInitializing ? 'Initializing FHE...' :
-                                 status === 'Encrypting' ? 'Encrypting Inputs...' :
-                                 status === 'Signing' ? 'Signing Transaction...' :
-                                 status === 'Computing' ? 'On-Chain FHE Computing...' :
-                                 status === 'Complete' ? 'Application Submitted' :
-                                 'Encrypt & Submit Application'}
-                            </button>
-                            
-                            {status && status !== 'Complete' && (
-                                <div className="mt-6 flex justify-between">
-                                    {['Encrypting', 'Signing', 'Computing', 'Complete'].map((step, i) => {
-                                        const steps = ['Encrypting', 'Signing', 'Computing', 'Complete'];
-                                        const currentIdx = steps.indexOf(status);
-                                        const isPast = i < currentIdx;
-                                        const isCurrent = i === currentIdx;
-                                        
-                                        return (
-                                            <div key={step} className="flex flex-col items-center gap-2 flex-1">
-                                                <div className={`h-1 w-full rounded-full transition-colors ${isPast ? 'bg-primary' : isCurrent ? 'bg-primary/30' : 'bg-white/5'}`} />
-                                                <span className={`text-[9px] font-bold uppercase tracking-widest ${isCurrent ? 'text-primary' : 'text-text-muted'}`}>{step}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                    {/* Submit */}
+                    <form onSubmit={handleSubmit}>
+                        <button
+                            type="submit"
+                            disabled={!account || !!status || isInitializing || !instance}
+                            className={`w-full h-11 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                                !account
+                                    ? 'bg-white/[0.04] text-text-muted cursor-not-allowed border border-white/[0.06]'
+                                    : (status && status !== 'Complete') || isInitializing
+                                    ? 'bg-primary/50 text-white/60 cursor-not-allowed'
+                                    : 'bg-primary text-white hover:bg-primary-hover active:scale-[0.99]'
+                            }`}
+                        >
+                            {((status && status !== 'Complete') || isInitializing) && <Loader2 size={15} className="animate-spin" />}
+                            {isInitializing ? 'Initializing FHE...' :
+                             status === 'Signing' ? 'Signing Transaction...' :
+                             status === 'Computing' ? 'Computing via FHE...' :
+                             status === 'Complete' ? 'Application Submitted' :
+                             'Submit Application'}
+                        </button>
+
+                        {/* Progress bar */}
+                        {status && status !== 'Complete' && (
+                            <div className="mt-3 flex items-center gap-1">
+                                {(['Signing', 'Computing'] as const).map((step, i) => {
+                                    const idx = ['Signing', 'Computing'].indexOf(status);
+                                    return (
+                                        <div key={step} className="flex-1 flex flex-col gap-1">
+                                            <div className={`h-0.5 rounded-full transition-all duration-300 ${i <= idx ? 'bg-primary' : 'bg-white/[0.06]'}`} />
+                                            <span className={`text-[10px] font-medium ${i === idx ? 'text-primary' : 'text-text-subtle'}`}>{step}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </form>
                 </div>
 
-                {/* Section 3: Result Card & History */}
-                <div className="space-y-6">
-                    {/* Result Card */}
-                    <div className="bg-surface border border-white/5 rounded-3xl p-8 space-y-6">
-                        <h2 className="text-lg font-semibold text-white">Your Score Tier</h2>
-                        
+                {/* ── Right: Result + History ── */}
+                <div className="space-y-4">
+                    {/* Tier Result */}
+                    <div className="bg-surface border border-white/[0.06] rounded-2xl p-5">
+                        <p className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-4">Score Tier</p>
                         {decryptedTier === null ? (
-                            <div className="aspect-video bg-background/50 border border-white/5 border-dashed rounded-2xl flex flex-col items-center justify-center text-center p-6 space-y-3">
-                                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-text-muted">
-                                    <Lock size={20} />
+                            <div className="flex flex-col items-center justify-center text-center py-8 space-y-2">
+                                <div className="h-10 w-10 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+                                    <Lock size={16} className="text-text-subtle" />
                                 </div>
-                                <p className="text-sm text-text-muted">Submit an application to reveal your privacy-preserving credit tier.</p>
+                                <p className="text-xs text-text-muted leading-relaxed">Submit an application to reveal your private credit tier.</p>
                             </div>
                         ) : (
-                            <div className="space-y-6 animate-in zoom-in-95 duration-500">
-                                {decryptedTier === 1 && (
-                                    <div className="p-6 bg-green-500/10 border border-green-500/20 rounded-2xl text-center space-y-4">
-                                        <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center text-green-400 mx-auto">
-                                            <ShieldCheck size={32} />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-green-400 font-bold text-lg">Tier 1 — Elite Reputation</h3>
-                                            <p className="text-xs text-green-400/70 mt-1">You are verified as a high-activity, high-liquidity participant. Perfect for VIP access across DeFi protocols.</p>
-                                        </div>
-                                    </div>
-                                )}
-                                {decryptedTier === 2 && (
-                                    <div className="p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-center space-y-4">
-                                        <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center text-amber-400 mx-auto">
-                                            <Activity size={32} />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-amber-400 font-bold text-lg">Tier 2 — Trusted Participant</h3>
-                                            <p className="text-xs text-amber-400/70 mt-1">You have established a solid on-chain footprint and maintain a healthy portfolio.</p>
-                                        </div>
-                                    </div>
-                                )}
-                                {decryptedTier === 3 && (
-                                    <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-2xl text-center space-y-4">
-                                        <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-red-400 mx-auto">
-                                            <AlertCircle size={32} />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-red-400 font-bold text-lg">Tier 3 — Emerging Profile</h3>
-                                            <p className="text-xs text-red-400/70 mt-1">Your profile is still growing. Increase your transaction activity or portfolio size to reach higher tiers.</p>
-                                        </div>
-                                    </div>
-                                )}
-                                
-                                <div className="p-4 bg-background/50 rounded-xl border border-white/5 flex gap-3">
-                                    <Info size={16} className="text-primary shrink-0" />
-                                    <p className="text-[10px] text-text-muted leading-relaxed">
-                                        Your raw financial inputs were never visible on-chain. Only this tier was shared with the lender via homomorphic selection.
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <span className={`h-2 w-2 rounded-full ${tierConfig[decryptedTier]?.dot || 'bg-text-muted'}`} />
+                                    <span className={`text-sm font-bold ${tierConfig[decryptedTier]?.color || 'text-white'}`}>
+                                        {tierConfig[decryptedTier]?.label || `Tier ${decryptedTier}`}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-text-muted leading-relaxed">{tierConfig[decryptedTier]?.sub}</p>
+                                <div className="pt-2 border-t border-white/[0.05]">
+                                    <p className="text-[10px] text-text-subtle leading-relaxed">
+                                        Raw inputs were never exposed on-chain. Only this tier was computed via FHE.
                                     </p>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* History Table */}
-                    <div className="bg-surface border border-white/5 rounded-3xl p-8 space-y-6">
-                        <div className="flex items-center gap-2">
-                            <History size={18} className="text-white" />
-                            <h2 className="text-lg font-semibold text-white">Application History</h2>
-                        </div>
-
+                    {/* History */}
+                    <div className="bg-surface border border-white/[0.06] rounded-2xl p-5">
+                        <p className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-4">History</p>
                         {loadingHistory ? (
-                            <div className="flex justify-center py-8">
-                                <Loader2 className="animate-spin text-primary" size={24} />
+                            <div className="flex justify-center py-6">
+                                <Loader2 size={18} className="animate-spin text-text-subtle" />
                             </div>
                         ) : history.length === 0 ? (
-                            <p className="text-sm text-text-muted text-center py-8">No previous applications.</p>
+                            <p className="text-xs text-text-muted text-center py-6">No applications yet.</p>
                         ) : (
-                            <div className="space-y-4">
+                            <div className="space-y-2">
                                 {history.map(app => (
-                                    <div key={app.id} className="flex items-center justify-between p-4 bg-background rounded-2xl border border-white/5">
+                                    <div key={app.id} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
                                         <div>
-                                            <p className="text-xs font-bold text-white">APP #{app.id}</p>
-                                            <p className="text-[10px] text-text-muted mt-1 flex items-center gap-1">
-                                                <Clock size={10} /> {app.date}
+                                            <p className="text-xs font-semibold text-white">#{app.id}</p>
+                                            <p className="text-[10px] text-text-muted flex items-center gap-1 mt-0.5">
+                                                <Clock size={9} />{app.date}
                                             </p>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="px-2 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider">
-                                                {app.status}
-                                            </span>
-                                            <ChevronRight size={14} className="text-text-muted" />
-                                        </div>
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                                            app.status === 'Processed'
+                                                ? 'bg-emerald-500/10 text-emerald-400'
+                                                : 'bg-amber-500/10 text-amber-400'
+                                        }`}>
+                                            {app.status}
+                                        </span>
                                     </div>
                                 ))}
                             </div>

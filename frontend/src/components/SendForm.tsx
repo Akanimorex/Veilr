@@ -3,12 +3,12 @@ import { getAddress } from 'ethers';
 import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
 import { toast } from 'react-hot-toast';
-import { Loader2, ShieldCheck, Send as SendIcon } from 'lucide-react';
+import { Loader2, Lock } from 'lucide-react';
 
 export const SendForm = () => {
     const { instance, account, isInitializing } = useFhevm();
     const { getContract, CONTRACT_ADDRESS } = useContract();
-    
+
     const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
     const [currency, setCurrency] = useState('cUSDT');
@@ -19,7 +19,7 @@ export const SendForm = () => {
         e.preventDefault();
         setIsProcessing(true);
         setStatus('Encrypting');
-        
+
         // Give React a moment to render the loading state before CPU-heavy work
         await new Promise(r => setTimeout(r, 50));
 
@@ -31,15 +31,13 @@ export const SendForm = () => {
         }
 
         const loadingToast = toast.loading("Encrypting transfer data...");
-        
+
         try {
             const amountNum = Math.floor(parseFloat(amount));
-
             const accountFixed = getAddress(account.trim());
             const contractFixed = getAddress(CONTRACT_ADDRESS.trim());
             const recipientFixed = getAddress(recipient.trim());
 
-            // Build encrypted input
             let input = instance.createEncryptedInput(contractFixed, accountFixed);
             input.addAddress(recipientFixed);
             input.add64(amountNum);
@@ -48,14 +46,14 @@ export const SendForm = () => {
 
             toast.loading('Submitting to network...', { id: loadingToast });
             setStatus('Submitting');
-            
+
             const contract = await getContract(true);
             const tx = await contract.send(currency, handles[0], handles[1], inputProof);
-            
+
             toast.loading('Awaiting on-chain confirmation...', { id: loadingToast });
             await tx.wait();
 
-            toast.success('Confidential Transfer Sent!', { id: loadingToast });
+            toast.success('Transfer sent successfully', { id: loadingToast });
             setStatus('Confirmed');
             setAmount('');
             setRecipient('');
@@ -67,73 +65,88 @@ export const SendForm = () => {
         setIsProcessing(false);
     };
 
+    const currencies = ['cUSDT', 'cNGN', 'cKES', 'cGHS'];
+
     return (
-        <form onSubmit={handleSubmit} className="bg-surface p-6 rounded-2xl border border-white/5 space-y-6">
-            <h2 className="text-xl font-medium text-white mb-4">Send Confidential Transfer</h2>
-            
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-sm text-text-muted mb-2">Recipient Address</label>
-                    <input 
-                        type="text" 
+        <form onSubmit={handleSubmit} className="max-w-xl space-y-6">
+            <div>
+                <h1 className="text-xl font-semibold text-white tracking-tight mb-1">Encrypted Send</h1>
+                <p className="text-sm text-text-muted">Transfer assets privately. Amounts are encrypted via FHE before hitting the chain.</p>
+            </div>
+
+            <div className="space-y-3">
+                {/* Recipient */}
+                <div className="bg-surface border border-white/[0.06] rounded-xl p-4 space-y-1.5 focus-within:border-white/12 transition-colors">
+                    <label className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">Recipient Address</label>
+                    <input
+                        type="text"
                         required
                         value={recipient}
                         onChange={(e) => setRecipient(e.target.value)}
                         placeholder="0x..."
                         pattern="^0x[a-fA-F0-9]{40}$"
-                        className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                        className="w-full bg-transparent text-sm text-white placeholder:text-text-subtle font-mono focus:outline-none"
                     />
                 </div>
 
-                <div className="flex gap-4">
-                    <div className="flex-1">
-                        <label className="block text-sm text-text-muted mb-2">Amount</label>
-                        <input 
-                            type="number" 
+                {/* Amount + Currency row */}
+                <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2 bg-surface border border-white/[0.06] rounded-xl p-4 space-y-1.5 focus-within:border-white/12 transition-colors">
+                        <label className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">Amount</label>
+                        <input
+                            type="number"
                             required
                             min="1"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
-                            placeholder="0.00"
-                            className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                            placeholder="0"
+                            className="w-full bg-transparent text-2xl font-bold text-white placeholder:text-text-subtle focus:outline-none tabular-nums"
                         />
                     </div>
-                    <div className="w-1/3">
-                        <label className="block text-sm text-text-muted mb-2">Currency</label>
-                        <select 
+                    <div className="bg-surface border border-white/[0.06] rounded-xl p-4 space-y-1.5">
+                        <label className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">Asset</label>
+                        <select
                             value={currency}
                             onChange={(e) => setCurrency(e.target.value)}
-                            className="w-full bg-background border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                            className="w-full bg-transparent text-sm font-semibold text-white focus:outline-none cursor-pointer appearance-none"
                         >
-                            <option value="cUSDT">cUSDT</option>
-                            <option value="cNGN">cNGN (Mock)</option>
-                            <option value="cKES">cKES (Mock)</option>
-                            <option value="cGHS">cGHS (Mock)</option>
+                            {currencies.map(c => <option key={c} value={c} className="bg-surface">{c}</option>)}
                         </select>
                     </div>
                 </div>
             </div>
 
-            <button 
-                type="submit" 
+            {/* Encryption note */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary/[0.06] border border-primary/10 rounded-lg">
+                <Lock size={12} className="text-primary shrink-0" />
+                <p className="text-[11px] text-primary/80 font-medium">
+                    The recipient address and amount will be encrypted client-side before submission.
+                </p>
+            </div>
+
+            {/* Submit Button */}
+            <button
+                type="submit"
                 disabled={!account || isProcessing || isInitializing || !instance}
-                className={`w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-3 ${
-                    (!account || isProcessing || isInitializing) ? 'bg-primary/50 cursor-not-allowed opacity-70' 
-                    : 'bg-primary hover:bg-primary-hover active:scale-95 shadow-lg shadow-primary/20'
+                className={`w-full h-11 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+                    !account
+                        ? 'bg-white/[0.04] text-text-muted cursor-not-allowed border border-white/[0.06]'
+                        : isProcessing || isInitializing
+                        ? 'bg-primary/50 text-white/60 cursor-not-allowed'
+                        : 'bg-primary text-white hover:bg-primary-hover active:scale-[0.99]'
                 }`}
             >
-                {(isProcessing || isInitializing) && (
-                    <Loader2 size={20} className="animate-spin" />
-                )}
-                {isInitializing ? "Initializing FHE..." : 
-                 status === 'Encrypting' ? "Encrypting Data..." : 
-                 status === 'Submitting' ? "Submitting to Network..." :
-                 (account ? "Encrypt & Send" : "Connect Wallet")}
+                {(isProcessing || isInitializing) && <Loader2 size={15} className="animate-spin" />}
+                {isInitializing ? 'Initializing FHE...' :
+                 status === 'Encrypting' ? 'Encrypting...' :
+                 status === 'Submitting' ? 'Submitting...' :
+                 account ? 'Encrypt & Send' : 'Connect Wallet'}
             </button>
 
             {status === 'Confirmed' && (
-                <div className="p-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl text-center text-sm">
-                    Transaction securely encrypted and submitted to network!
+                <div className="flex items-center gap-2 p-3 bg-emerald-500/[0.06] border border-emerald-500/10 rounded-xl text-emerald-400 text-xs font-medium">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    Transfer submitted to network. Encrypted on-chain.
                 </div>
             )}
         </form>
