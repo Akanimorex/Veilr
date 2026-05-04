@@ -18,14 +18,15 @@ import {
 } from 'lucide-react';
 
 export const Credit = () => {
-    const { account, instance, rawProvider } = useFhevm();
+    const { account, instance, rawProvider, isInitializing } = useFhevm();
     const { getContract, CONTRACT_ADDRESS } = useContract();
 
-    // Form State
-    const [avgBalance, setAvgBalance] = useState(3); // 1-5
-    const [txCount, setTxCount] = useState(2); // 1-3
-    const [walletAge, setWalletAge] = useState(24); // 1-60
-    const [repaymentHistory, setRepaymentHistory] = useState(1); // 0-1
+    // Verified Stats (Fetched from Chain)
+    const [verifiedStats, setVerifiedStats] = useState({
+        balance: '...',
+        activity: '...',
+        age: '...'
+    });
 
     // UI State
     const [status, setStatus] = useState<'' | 'Encrypting' | 'Signing' | 'Computing' | 'Complete'>('');
@@ -33,6 +34,37 @@ export const Credit = () => {
     const [history, setHistory] = useState<any[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [authData, setAuthData] = useState<any>(null);
+
+    const fetchVerifiedStats = async () => {
+        if (!account) return;
+        try {
+            const contract = await getContract();
+            
+            // 1. Get User-specific Nonce (Activity)
+            const nonce = await contract.nextTxNonce(account);
+            
+            // 2. Get Join Date (Age)
+            const jd = await contract.joinDate(account);
+            let ageStr = "First Visit";
+            if (jd > 0n) {
+                const diff = Math.floor(Date.now() / 1000) - Number(jd);
+                const days = Math.floor(diff / 86400);
+                ageStr = days > 0 ? `${days} Days` : "Joined Today";
+            }
+
+            setVerifiedStats({
+                balance: "Encrypted",
+                activity: `${nonce} Txns`,
+                age: ageStr
+            });
+        } catch (e) {
+            console.error("Failed to fetch verified stats", e);
+        }
+    };
+
+    useEffect(() => {
+        if (account) fetchVerifiedStats();
+    }, [account]);
 
     // Load auth from session
     useEffect(() => {
@@ -48,7 +80,7 @@ export const Credit = () => {
         try {
             const keypair = instance.generateKeypair();
             const startTimestamp = Math.floor(Date.now() / 1000) - 3600;
-            const durationDays = 1;
+            const durationDays = 7; 
             const eip712 = instance.createEIP712(keypair.publicKey, [getAddress(CONTRACT_ADDRESS)], startTimestamp, durationDays);
             const signer = await (rawProvider || (window as any).ethereum).request({
                 method: 'eth_signTypedData_v4',
@@ -63,6 +95,13 @@ export const Credit = () => {
             console.error("Auth failed", e);
             return null;
         }
+    };
+
+    const isAuthValid = (auth: any) => {
+        if (!auth) return false;
+        const now = Math.floor(Date.now() / 1000);
+        const expiry = auth.startTimestamp + (auth.durationDays * 86400);
+        return now < expiry;
     };
 
     const fetchHistory = async () => {
@@ -101,23 +140,12 @@ export const Credit = () => {
         if (!instance || !account) return;
 
         try {
-            setStatus('Encrypting');
+            setStatus('Signing');
             const contractFixed = getAddress(CONTRACT_ADDRESS);
             const accountFixed = getAddress(account);
 
-            const input = instance.createEncryptedInput(contractFixed, accountFixed);
-            input.add64(avgBalance);
-            input.add64(txCount);
-            input.add64(walletAge);
-            input.add8(repaymentHistory);
-
-            const { handles, inputProof } = await input.encrypt();
-
-            setStatus('Signing');
             const contract = await getContract(true);
-            const tx = await contract.applyForCredit(
-                handles[0], handles[1], handles[2], handles[3], inputProof
-            );
+            const tx = await contract.applyForCredit();
             
             setStatus('Computing');
             await tx.wait();
@@ -128,7 +156,7 @@ export const Credit = () => {
             
             // Decrypt the result if authorized
             let activeAuth = authData;
-            if (!activeAuth) {
+            if (!isAuthValid(activeAuth)) {
                 activeAuth = await handleAuthorize();
             }
 
@@ -173,41 +201,27 @@ export const Credit = () => {
                         <span className="text-sm font-bold uppercase tracking-widest">Privacy-First Credit</span>
                     </div>
                     <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
-                        Prove your creditworthiness. <br/>
-                        <span className="text-primary">Reveal nothing.</span>
+                        Strict On-Chain <br/>
+                        <span className="text-primary">Verification</span>
                     </h1>
-                    <p className="text-text-muted text-lg leading-relaxed mb-10">
-                        All financial inputs are encrypted inside your browser before they ever reach the blockchain. 
-                        Lenders only receive a verified score tier — never your raw data or transaction history.
+                    <p className="text-text-muted text-lg leading-relaxed mb-6">
+                        We've upgraded our metrics. Eligibility is now determined by your multi-asset portfolio and historical engagement.
                     </p>
-
-                    {/* Flow Diagram */}
-                    <div className="flex items-center justify-between gap-4 p-6 bg-background/40 backdrop-blur-sm rounded-2xl border border-white/5">
-                        <div className="flex flex-col items-center gap-2">
-                            <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white"><Activity size={18}/></div>
-                            <span className="text-[10px] text-text-muted font-medium text-center">Your inputs</span>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <p className="text-primary font-bold text-xs uppercase mb-1">Tier 1 Target</p>
+                            <p className="text-white text-xs">3+ tokens (1000+ each) + 10 Txns + 5 Days</p>
                         </div>
-                        <ArrowRight size={14} className="text-white/20" />
-                        <div className="flex flex-col items-center gap-2">
-                            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary"><Lock size={18}/></div>
-                            <span className="text-[10px] text-text-muted font-medium text-center">Encrypted in browser</span>
-                        </div>
-                        <ArrowRight size={14} className="text-white/20" />
-                        <div className="flex flex-col items-center gap-2">
-                            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white"><Zap size={18}/></div>
-                            <span className="text-[10px] text-text-muted font-medium text-center">FHE computed on-chain</span>
-                        </div>
-                        <ArrowRight size={14} className="text-white/20" />
-                        <div className="flex flex-col items-center gap-2">
-                            <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-400"><CheckCircle2 size={18}/></div>
-                            <span className="text-[10px] text-text-muted font-medium text-center">Tier result only</span>
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <p className="text-amber-400 font-bold text-xs uppercase mb-1">Tier 2 Target</p>
+                            <p className="text-white text-xs">2+ tokens (500+ each) + 5 Txns + 3 Days</p>
                         </div>
                     </div>
                 </div>
                 
                 {/* Abstract visual decor */}
                 <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-primary/10 to-transparent pointer-events-none" />
-                <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-primary/20 rounded-full blur-[100px] pointer-events-none" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -215,7 +229,7 @@ export const Credit = () => {
                 <div className="lg:col-span-2 space-y-6">
                     <form onSubmit={handleSubmit} className="bg-surface border border-white/5 rounded-3xl p-8 space-y-8">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-semibold text-white">Application Details</h2>
+                            <h2 className="text-xl font-semibold text-white">Application Summary</h2>
                             <div className="flex items-center gap-2 text-text-muted">
                                 <Info size={16} />
                                 <span className="text-xs">End-to-end Encrypted</span>
@@ -223,99 +237,57 @@ export const Credit = () => {
                         </div>
 
                         <div className="space-y-8">
-                            {/* Average Balance */}
+                            {/* Multi-Token Balances (Verified) */}
                             <div className="space-y-4">
-                                <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Average Balance Tier</label>
-                                <div className="grid grid-cols-5 gap-2">
-                                    {['Low', 'Mid', 'High', 'V.High', 'Excel.'].map((label, i) => (
-                                        <button
-                                            key={label}
-                                            type="button"
-                                            onClick={() => setAvgBalance(i + 1)}
-                                            className={`py-3 rounded-xl text-xs font-bold transition-all border ${
-                                                avgBalance === i + 1 
-                                                ? 'bg-primary border-primary text-white' 
-                                                : 'bg-background border-white/5 text-text-muted hover:border-white/10'
-                                            }`}
-                                        >
-                                            {label}
-                                        </button>
-                                    ))}
+                                <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Multi-Token Portfolio</label>
+                                <div className="p-4 bg-background border border-primary/20 rounded-2xl flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary"><ShieldCheck size={16}/></div>
+                                        <span className="text-white font-bold">Scanning All Vaults...</span>
+                                    </div>
+                                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-widest">Multi-Asset Scan</span>
                                 </div>
                             </div>
 
-                            {/* Tx Activity */}
+                            {/* Tx Activity (Verified) */}
                             <div className="space-y-4">
                                 <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Transaction Activity</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {['Low', 'Medium', 'High'].map((label, i) => (
-                                        <button
-                                            key={label}
-                                            type="button"
-                                            onClick={() => setTxCount(i + 1)}
-                                            className={`py-3 rounded-xl text-xs font-bold transition-all border ${
-                                                txCount === i + 1 
-                                                ? 'bg-primary border-primary text-white' 
-                                                : 'bg-background border-white/5 text-text-muted hover:border-white/10'
-                                            }`}
-                                        >
-                                            {label}
-                                        </button>
-                                    ))}
+                                <div className="p-4 bg-background border border-primary/20 rounded-2xl flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Activity size={16}/></div>
+                                        <span className="text-white font-bold">{verifiedStats.activity}</span>
+                                    </div>
+                                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-widest">Real-Time Sync</span>
                                 </div>
                             </div>
 
-                            {/* Wallet Age */}
+                            {/* Wallet Age (Verified) */}
                             <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Wallet Age</label>
-                                    <span className="text-primary font-bold text-sm bg-primary/10 px-3 py-1 rounded-full">{walletAge} months</span>
+                                <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Active History</label>
+                                <div className="p-4 bg-background border border-primary/20 rounded-2xl flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Clock size={16}/></div>
+                                        <span className="text-white font-bold">{verifiedStats.age}</span>
+                                    </div>
+                                    <span className="px-2 py-1 bg-primary/20 text-primary text-[10px] font-bold rounded uppercase tracking-widest">History Logged</span>
                                 </div>
-                                <input 
-                                    type="range" 
-                                    min="1" 
-                                    max="60" 
-                                    value={walletAge}
-                                    onChange={(e) => setWalletAge(parseInt(e.target.value))}
-                                    className="w-full h-2 bg-background rounded-lg appearance-none cursor-pointer accent-primary border border-white/5"
-                                />
-                                <div className="flex justify-between text-[10px] text-text-muted font-bold">
-                                    <span>1 MONTH</span>
-                                    <span>60 MONTHS</span>
-                                </div>
-                            </div>
-
-                            {/* Repayment History */}
-                            <div className="flex items-center justify-between p-4 bg-background/50 rounded-2xl border border-white/5">
-                                <div>
-                                    <label className="block text-sm font-medium text-white">Good Repayment History</label>
-                                    <p className="text-xs text-text-muted">Do you have a history of on-time loan repayments?</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setRepaymentHistory(repaymentHistory === 1 ? 0 : 1)}
-                                    className={`relative w-14 h-7 rounded-full transition-colors ${repaymentHistory === 1 ? 'bg-primary' : 'bg-white/10'}`}
-                                >
-                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${repaymentHistory === 1 ? 'left-8' : 'left-1'}`} />
-                                </button>
                             </div>
                         </div>
 
                         <div className="pt-4">
                             <button
                                 type="submit"
-                                disabled={!account || !!status}
+                                disabled={!account || !!status || isInitializing || !instance}
                                 className={`w-full py-5 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-3 ${
                                     !account ? 'bg-primary/50 cursor-not-allowed' :
-                                    status ? 'bg-primary/80 animate-pulse' : 'bg-primary hover:bg-primary-hover active:scale-[0.98] shadow-lg shadow-primary/20'
+                                    (status || isInitializing) ? 'bg-primary/80 animate-pulse' : 'bg-primary hover:bg-primary-hover active:scale-[0.98] shadow-lg shadow-primary/20'
                                 }`}
                             >
-                                {status === 'Encrypting' && <Loader2 className="animate-spin" size={20} />}
-                                {status === 'Signing' && <Loader2 className="animate-spin" size={20} />}
-                                {status === 'Computing' && <Loader2 className="animate-spin" size={20} />}
+                                {(status === 'Encrypting' || status === 'Signing' || status === 'Computing' || isInitializing) && <Loader2 className="animate-spin" size={20} />}
                                 {status === 'Complete' && <CheckCircle2 size={20} />}
                                 
-                                {status === 'Encrypting' ? 'Encrypting Inputs...' :
+                                {isInitializing ? 'Initializing FHE...' :
+                                 status === 'Encrypting' ? 'Encrypting Inputs...' :
                                  status === 'Signing' ? 'Signing Transaction...' :
                                  status === 'Computing' ? 'On-Chain FHE Computing...' :
                                  status === 'Complete' ? 'Application Submitted' :
@@ -364,8 +336,8 @@ export const Credit = () => {
                                             <ShieldCheck size={32} />
                                         </div>
                                         <div>
-                                            <h3 className="text-green-400 font-bold text-lg">Tier 1 — Full Credit</h3>
-                                            <p className="text-xs text-green-400/70 mt-1">You qualify for the maximum loan amount.</p>
+                                            <h3 className="text-green-400 font-bold text-lg">Tier 1 — Elite Reputation</h3>
+                                            <p className="text-xs text-green-400/70 mt-1">You are verified as a high-activity, high-liquidity participant. Perfect for VIP access across DeFi protocols.</p>
                                         </div>
                                     </div>
                                 )}
@@ -375,8 +347,8 @@ export const Credit = () => {
                                             <Activity size={32} />
                                         </div>
                                         <div>
-                                            <h3 className="text-amber-400 font-bold text-lg">Tier 2 — Partial Credit</h3>
-                                            <p className="text-xs text-amber-400/70 mt-1">You qualify for a reduced loan amount.</p>
+                                            <h3 className="text-amber-400 font-bold text-lg">Tier 2 — Trusted Participant</h3>
+                                            <p className="text-xs text-amber-400/70 mt-1">You have established a solid on-chain footprint and maintain a healthy portfolio.</p>
                                         </div>
                                     </div>
                                 )}
@@ -386,8 +358,8 @@ export const Credit = () => {
                                             <AlertCircle size={32} />
                                         </div>
                                         <div>
-                                            <h3 className="text-red-400 font-bold text-lg">Tier 3 — Not Eligible</h3>
-                                            <p className="text-xs text-red-400/70 mt-1">Your current signals do not meet the minimum threshold.</p>
+                                            <h3 className="text-red-400 font-bold text-lg">Tier 3 — Emerging Profile</h3>
+                                            <p className="text-xs text-red-400/70 mt-1">Your profile is still growing. Increase your transaction activity or portfolio size to reach higher tiers.</p>
                                         </div>
                                     </div>
                                 )}

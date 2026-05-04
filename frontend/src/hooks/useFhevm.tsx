@@ -7,6 +7,7 @@ export interface FhevmContextType {
   provider: BrowserProvider | null;
   rawProvider: any | null;
   account: string | null;
+  isInitializing: boolean;
   connect: () => Promise<void>;
 }
 
@@ -15,6 +16,7 @@ const FhevmContext = createContext<FhevmContextType>({
   provider: null,
   rawProvider: null,
   account: null,
+  isInitializing: false,
   connect: async () => {},
 });
 
@@ -25,123 +27,146 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [rawProvider, setRawProvider] = useState<any | null>(null);
   const [account, setAccount] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   const connect = async () => {
-    // 1. Identify active provider (handling cases with multiple wallets like Compass/MetaMask)
     let activeProvider = window.ethereum;
     if (window.ethereum?.providers) {
-        console.log("Multiple providers detected:", window.ethereum.providers.map((p: any) => p.isMetaMask ? "MetaMask" : "Other"));
         activeProvider = window.ethereum.providers.find((p: any) => p.isMetaMask) || window.ethereum.providers[0];
     }
 
     if (!activeProvider) {
-      console.error("No active provider found");
       alert("No Ethereum wallet found. Please install MetaMask!");
       return;
     }
 
     try {
-      console.log("Connecting wallet via provider:", activeProvider.isMetaMask ? "MetaMask" : "Generic/Other");
+      console.log("Requesting account connection...");
+      console.log("Provider detected as:", activeProvider.isMetaMask ? "MetaMask" : "Other");
       
-      // 2. Prompt user to connect
-      await activeProvider.request({ method: 'eth_requestAccounts' });
+      const accountsRequest = await activeProvider.request({ method: 'eth_requestAccounts' });
+      console.log("eth_requestAccounts result:", accountsRequest);
       
-      // 3. Ensure accounts are actually ready (prevents "wallet must has at least one account" error)
+      // Retry loop to ensure accounts are visible
       let accounts: string[] = [];
-      console.log("Waiting for accounts to be visible...");
-      for (let i = 0; i < 20; i++) { // Increased to 20 attempts (4 seconds)
-        accounts = await activeProvider.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-            console.log("Account detected:", accounts[0]);
-            break;
-        }
-        await new Promise(r => setTimeout(r, 200));
+      for (let i = 0; i < 15; i++) {
+          accounts = await activeProvider.request({ method: 'eth_accounts' });
+          if (accounts && accounts.length > 0) break;
+          console.log(`Waiting for accounts... attempt ${i+1}`);
+          await new Promise(r => setTimeout(r, 500));
       }
 
-      if (accounts.length === 0) {
-        throw new Error("Wallet connected but accounts are not available yet. Please ensure your wallet is unlocked and has at least one account.");
+      if (accounts && accounts.length > 0) {
+        const cleanAccount = String(accounts[0]).toLowerCase();
+        console.log("Connected account confirmed:", cleanAccount);
+        setAccount(cleanAccount);
+        setRawProvider(activeProvider);
+        setProvider(new BrowserProvider(activeProvider));
+        localStorage.setItem('walletConnected', 'true');
+      } else {
+        throw new Error("Wallet connected but no accounts were returned. Please ensure your wallet is unlocked.");
       }
-
-      const ethersProvider = new BrowserProvider(activeProvider);
-      setProvider(ethersProvider);
-      setRawProvider(activeProvider);
-      setAccount(accounts[0]);
-
-      // 4. Force network to Sepolia Testnet
-      const chainId = 11155111;
-      const network = await ethersProvider.getNetwork();
-      console.log("Current Chain ID:", network.chainId.toString());
-      if (Number(network.chainId) !== chainId) {
-        console.log("Switching to Sepolia Testnet...");
-        try {
-          await activeProvider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0xaa36a7' }], // 11155111 in hex
-          });
-        } catch (switchError: any) {
-          if (switchError.code === 4902) {
-            console.log("Adding Sepolia Testnet to wallet...");
-            await activeProvider.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: '0xaa36a7',
-                chainName: 'Sepolia Testnet',
-                rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
-                nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 }
-              }]
-            });
-          } else {
-            throw switchError;
-          }
-        }
-      }
-
-      // 5. Initialize FHEVM SDK
-      console.log("Initializing FHEVM SDK...");
-      await initSDK();
-      const sdkInstance = await createInstance({
-          ...SepoliaConfig,
-          network: activeProvider
-      });
-      setInstance(sdkInstance);
-      localStorage.setItem('walletConnected', 'true');
-      console.log("FHEVM Initialized successfully");
     } catch (err: any) {
-      console.error("FHEVM Connection Error:", err);
-      const errorMsg = err.code === 4001 ? "Wallet connection rejected by user." : 
-                      err.message?.includes("at least one account") ? "No accounts found! Please ensure you have an account in MetaMask and it's unlocked." :
-                      err.message || err.toString();
-      alert("Error initializing FHEVM: " + errorMsg);
+      console.error("Connection Error:", err);
+      if (err.code !== 4001) {
+          alert("Connection Error: " + (err.message || "Failed to find active account"));
+      }
     }
   };
 
   useEffect(() => {
-    // Auto-connect if previously connected to prevent dropping state on reload
+    const initFhe = async () => {
+        if (!account || !rawProvider || !provider) return;
+        
+        setIsInitializing(true);
+        try {
+            // 0. Double check accounts are actually available to the provider
+            const checkAccounts = await rawProvider.request({ method: 'eth_accounts' });
+            if (!checkAccounts || checkAccounts.length === 0) {
+                console.warn("FHEVM: Provider has no active accounts. Delaying init...");
+                return;
+            }
+
+            // 1. Ensure Network
+            const chainId = 11155111;
+            const network = await provider.getNetwork();
+            if (Number(network.chainId) !== chainId) {
+                try {
+                    await rawProvider.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: '0xaa36a7' }],
+                    });
+                } catch (switchError: any) {
+                    if (switchError.code === 4902) {
+                        await rawProvider.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: '0xaa36a7',
+                                chainName: 'Sepolia Testnet',
+                                rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+                                nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 }
+                            }]
+                        });
+                    }
+                }
+            }
+
+            // 2. Init SDK
+            console.log("Initializing FHEVM instance for:", account);
+            await initSDK();
+            const sdkInstance = await createInstance({
+                ...SepoliaConfig,
+                network: rawProvider
+            });
+            setInstance(sdkInstance);
+            console.log("FHEVM Ready");
+        } catch (err) {
+            console.error("FHEVM Initialization failed:", err);
+        } finally {
+            setIsInitializing(false);
+        }
+    };
+
+    initFhe();
+  }, [account, provider, rawProvider]);
+
+  useEffect(() => {
     if (localStorage.getItem('walletConnected') === 'true') {
         connect();
     }
 
     if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts: string[]) => {
-        console.log("Accounts changed event:", accounts);
+      const getActiveProvider = () => {
+          if (window.ethereum?.providers) {
+              return window.ethereum.providers.find((p: any) => p.isMetaMask) || window.ethereum.providers[0];
+          }
+          return window.ethereum;
+      };
+
+      const handleAccounts = (accounts: string[]) => {
+        const activeProvider = getActiveProvider();
         if (accounts.length > 0) {
-            const cleanAccount = String(accounts[0]).trim();
-            setAccount(cleanAccount);
-            console.log("Active account updated to:", cleanAccount);
+            setAccount(accounts[0]);
+            setRawProvider(activeProvider);
+            setProvider(new BrowserProvider(activeProvider));
         } else {
             setAccount(null);
+            setInstance(null);
             localStorage.removeItem('walletConnected');
         }
-      });
-      window.ethereum.on('chainChanged', (chainId: string) => {
-        console.log("Chain changed to:", chainId);
-        // Removed automatic reload to prevent state loss during transactions
-      });
+      };
+
+      window.ethereum.on('accountsChanged', handleAccounts);
+      window.ethereum.on('chainChanged', () => window.location.reload());
+
+      return () => {
+        window.ethereum.removeListener('accountsChanged', handleAccounts);
+      };
     }
   }, []);
 
   return (
-    <FhevmContext.Provider value={{ instance, provider, rawProvider, account, connect }}>
+    <FhevmContext.Provider value={{ instance, provider, rawProvider, account, isInitializing, connect }}>
       {children}
     </FhevmContext.Provider>
   );

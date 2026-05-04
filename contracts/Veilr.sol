@@ -4,8 +4,9 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import {FHE, euint8, euint64, eaddress, ebool, externalEuint8, externalEuint64, externalEaddress} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import "./IVeilrCredit.sol";
 
-contract Veilr is ZamaEthereumConfig, AccessControl {
+contract Veilr is ZamaEthereumConfig, AccessControl, IVeilrCredit {
     bytes32 public constant SENDER_ROLE = keccak256("SENDER_ROLE");
     bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
     bytes32 public constant REGULATOR_ROLE = keccak256("REGULATOR_ROLE");
@@ -20,7 +21,16 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
     address[] public allUsers;
     mapping(address => bool) public userExists;
 
-    uint256 public nextTxNonce;
+    mapping(address => uint256) public nextTxNonce;
+    mapping(address => uint256) public joinDate;
+    mapping(address => uint256) public totalDeposited; // Lifetime volume in plaintext for stats
+    
+    function _recordInteraction(address user) internal {
+        if (joinDate[user] == 0) {
+            joinDate[user] = block.timestamp;
+        }
+        nextTxNonce[user]++;
+    }
 
     struct DecryptionRequest {
         bool active;
@@ -48,7 +58,7 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
         _;
     }
 
-    function _getSymbolHash(string calldata symbol) internal pure returns (bytes32) {
+    function _getSymbolHash(string memory symbol) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(symbol));
     }
 
@@ -56,20 +66,20 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
     /// @param symbol The token symbol (e.g., "cUSDT", "cNGN")
     /// @param amount Plaintext amount to mint
     function mint(string calldata symbol, uint64 amount) public {
+        _recordInteraction(msg.sender);
         bytes32 sHash = _getSymbolHash(symbol);
         euint64 eAmount = FHE.asEuint64(amount);
 
         if (!userExists[msg.sender]) {
             userExists[msg.sender] = true;
             allUsers.push(msg.sender);
-            // Initialize with encrypted zero to avoid adding to a null handle
             balances[sHash][msg.sender] = FHE.asEuint64(0);
         }
 
         balances[sHash][msg.sender] = FHE.add(balances[sHash][msg.sender], eAmount);
         totalSupply[sHash] = FHE.add(totalSupply[sHash], eAmount);
+        totalDeposited[msg.sender] += uint256(amount);
 
-        // Grant permissions for the new handles
         FHE.allowThis(balances[sHash][msg.sender]);
         FHE.allow(balances[sHash][msg.sender], msg.sender);
         FHE.allowThis(totalSupply[sHash]);
@@ -82,6 +92,7 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
     /// @param amount The external encrypted uint64 handle
     /// @param inputProof The zero-knowledge input proof
     function deposit(string calldata symbol, externalEuint64 amount, bytes calldata inputProof) public {
+        _recordInteraction(msg.sender);
         bytes32 sHash = _getSymbolHash(symbol);
         euint64 amountVerified = FHE.fromExternal(amount, inputProof);
 
@@ -112,29 +123,24 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public {
+        _recordInteraction(msg.sender);
         bytes32 sHash = _getSymbolHash(symbol);
         eaddress recipient = FHE.fromExternal(encryptedRecipient, inputProof);
         euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
 
-        // Allow contract to use the inputs
         FHE.allowTransient(recipient, address(this));
         FHE.allowTransient(amount, address(this));
 
-        // Validate sender has sufficient balance
         ebool canTransfer = FHE.le(amount, balances[sHash][msg.sender]);
         euint64 actualTransferAmount = FHE.select(canTransfer, amount, FHE.asEuint64(0));
 
-        // Deduct from sender
         balances[sHash][msg.sender] = FHE.sub(balances[sHash][msg.sender], actualTransferAmount);
         FHE.allowThis(balances[sHash][msg.sender]);
         FHE.allow(balances[sHash][msg.sender], msg.sender);
 
-        // Add to recipient homomorphically
         for (uint i = 0; i < allUsers.length; i++) {
             address user = allUsers[i];
             
-            // Ensure the user's balance handle is initialized even if they never received this token
-            // This is safer than adding to a potentially null handle (0)
             if (FHE.isInitialized(balances[sHash][user]) == false) {
                 balances[sHash][user] = FHE.asEuint64(0);
             }
@@ -147,9 +153,8 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
             FHE.allow(balances[sHash][user], user);
         }
 
-        uint256 nonce = nextTxNonce++;
+        uint256 nonce = nextTxNonce[msg.sender] - 1; 
 
-        // Save for compliance review
         decryptionRequests[nonce] = DecryptionRequest({
             active: true,
             symbolHash: sHash,
@@ -165,9 +170,6 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
         emit TransferInitiated(nonce, symbol, block.timestamp);
     }
 
-    /// @notice Threshold compliance decryption — requires two compliance officers to sign.
-    ///         Once both sign, an event is emitted for off-chain decryption via the Zama Gateway.
-    /// @param nonce The transaction nonce to sign for decryption
     function signDecryptionRequest(uint256 nonce) public onlyCompliance {
         require(decryptionRequests[nonce].active, "Request not active");
         require(!hasSigned[nonce][msg.sender], "Already signed");
@@ -184,30 +186,23 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
         }
     }
 
-    /// @notice Returns the encrypted handle for a compliance-approved transaction amount.
-    ///         Regulators can use this handle with the Zama Relayer SDK to request decryption off-chain.
-    /// @param nonce The transaction nonce
-    /// @return The encrypted amount handle
     function getEncryptedAmountForRegulator(uint256 nonce) public view returns (euint64) {
         require(hasRole(REGULATOR_ROLE, msg.sender), "Only regulator can view");
         require(decryptionRequests[nonce].approved, "Decryption not approved");
         return decryptionRequests[nonce].encryptedAmount;
     }
 
-    /// @notice Returns the caller's encrypted balance handle for a specific token.
-    /// @param symbol The token symbol
     function getBalance(string calldata symbol) public view returns (euint64) {
         return balances[_getSymbolHash(symbol)][msg.sender];
+    }
+
+    function getBalanceFor(address user, string calldata symbol) public view returns (euint64) {
+        return balances[_getSymbolHash(symbol)][user];
     }
 
     // --- Private Credit Scoring Module ---
 
     struct CreditApplication {
-        euint64 encryptedAvgBalance;
-        euint64 encryptedTxCount;
-        euint64 encryptedWalletAge;
-        euint8  encryptedRepaymentFlag;
-        euint64 encryptedScore;
         euint8  encryptedTier;
         bool    scored;
         address applicant;
@@ -221,84 +216,85 @@ contract Veilr is ZamaEthereumConfig, AccessControl {
     event CreditApplicationSubmitted(uint256 indexed appId, address indexed applicant, uint256 timestamp);
     event ScoreTierGranted(uint256 indexed appId, address indexed lender);
 
-    function applyForCredit(
-        externalEuint64 avgBalance,
-        externalEuint64 txCount,
-        externalEuint64 walletAge,
-        externalEuint8 repaymentFlag,
-        bytes calldata inputProof
-    ) public {
-        euint64 eAvgBalance = FHE.fromExternal(avgBalance, inputProof);
-        euint64 eTxCount = FHE.fromExternal(txCount, inputProof);
-        euint64 eWalletAge = FHE.fromExternal(walletAge, inputProof);
-        euint8 eRepaymentFlag = FHE.fromExternal(repaymentFlag, inputProof);
+    function hasCreditScore(address borrower) external view override returns (bool) {
+        return applicantHistory[borrower].length > 0;
+    }
 
-        FHE.allowTransient(eAvgBalance, address(this));
-        FHE.allowTransient(eTxCount, address(this));
-        FHE.allowTransient(eWalletAge, address(this));
-        FHE.allowTransient(eRepaymentFlag, address(this));
+    function requestCreditTier(address borrower, address lender) external override returns (euint8) {
+        require(applicantHistory[borrower].length > 0, "No credit score found");
+        uint256 latestAppId = applicantHistory[borrower][applicantHistory[borrower].length - 1];
+        euint8 tier = applications[latestAppId].encryptedTier;
+        FHE.allow(tier, lender);
+        return tier;
+    }
+
+    function applyForCredit() public {
+        _recordInteraction(msg.sender);
+
+        // 1. Calculate Activity (Nonce)
+        uint64 rawActivity = uint64(nextTxNonce[msg.sender]);
+        euint64 vActivity = FHE.asEuint64(rawActivity);
+        
+        // 2. Calculate Age (Days)
+        uint256 ageSecs = block.timestamp - joinDate[msg.sender];
+        uint256 ageDays = ageSecs / 1 days;
+
+        // 3. Check Multi-Token Balances
+        string[4] memory symbols = ["cUSDT", "cNGN", "cKES", "cGHS"];
+        euint8 count1000 = FHE.asEuint8(0);
+        euint8 count500 = FHE.asEuint8(0);
+
+        for (uint i = 0; i < symbols.length; i++) {
+            bytes32 sHash = _getSymbolHash(symbols[i]);
+            euint64 bal = balances[sHash][msg.sender];
+            
+            if (FHE.isInitialized(bal)) {
+                count1000 = FHE.add(count1000, FHE.select(FHE.ge(bal, uint64(1000)), FHE.asEuint8(1), FHE.asEuint8(0)));
+                count500 = FHE.add(count500, FHE.select(FHE.ge(bal, uint64(500)), FHE.asEuint8(1), FHE.asEuint8(0)));
+            }
+        }
+
+        // 4. Compute Strict Tiers
+        // Tier 1: (count1000 >= 3) && (tx >= 10) && (age >= 5 days)
+        ebool isTier1 = FHE.and(
+            FHE.and(FHE.ge(count1000, uint8(3)), FHE.ge(vActivity, uint64(10))),
+            FHE.asEbool(ageDays >= 5)
+        );
+
+        // Tier 2: (count500 >= 2) && (tx >= 5) && (age >= 3 days)
+        ebool isTier2 = FHE.and(
+            FHE.and(FHE.ge(count500, uint8(2)), FHE.ge(vActivity, uint64(5))),
+            FHE.asEbool(ageDays >= 3)
+        );
+
+        // Tier 3: tx >= 1
+        ebool isTier3 = FHE.ge(vActivity, uint64(1));
+
+        euint8 tier = FHE.select(isTier1, FHE.asEuint8(1),
+                      FHE.select(isTier2, FHE.asEuint8(2),
+                      FHE.select(isTier3, FHE.asEuint8(3), FHE.asEuint8(3))));
 
         uint256 appId = applicationCount++;
         applications[appId] = CreditApplication({
-            encryptedAvgBalance: eAvgBalance,
-            encryptedTxCount: eTxCount,
-            encryptedWalletAge: eWalletAge,
-            encryptedRepaymentFlag: eRepaymentFlag,
-            encryptedScore: FHE.asEuint64(0),
-            encryptedTier: FHE.asEuint8(0),
-            scored: false,
+            encryptedTier: tier,
+            scored: true,
             applicant: msg.sender,
             timestamp: block.timestamp
         });
 
         applicantHistory[msg.sender].push(appId);
         
-        _computeScore(appId);
+        FHE.allow(tier, msg.sender);
+        FHE.allow(tier, address(this));
         
         emit CreditApplicationSubmitted(appId, msg.sender, block.timestamp);
-    }
-
-    function _computeScore(uint256 appId) internal {
-        CreditApplication storage app = applications[appId];
-        
-        // score = (avgBalance × 3) + (txCount × 2) + (walletAge × 2) + (repaymentFlag × 3)
-        euint64 part1 = FHE.mul(app.encryptedAvgBalance, uint64(3));
-        euint64 part2 = FHE.mul(app.encryptedTxCount, uint64(2));
-        euint64 part3 = FHE.mul(app.encryptedWalletAge, uint64(2));
-        euint64 part4 = FHE.mul(FHE.asEuint64(app.encryptedRepaymentFlag), uint64(3));
-
-        euint64 totalScore = FHE.add(FHE.add(part1, part2), FHE.add(part3, part4));
-        
-        // Pre-calculate Tier
-        euint8 tier3 = FHE.asEuint8(3);
-        euint8 tier2 = FHE.asEuint8(2);
-        euint8 tier1 = FHE.asEuint8(1);
-
-        euint8 tier = FHE.select(
-            FHE.le(totalScore, uint64(15)),
-            tier3,
-            FHE.select(
-                FHE.le(totalScore, uint64(25)),
-                tier2,
-                tier1
-            )
-        );
-
-        app.encryptedScore = totalScore;
-        app.encryptedTier = tier;
-        app.scored = true;
-
-        FHE.allow(totalScore, app.applicant);
-        FHE.allow(tier, app.applicant);
-        FHE.allow(totalScore, address(this));
-        FHE.allow(tier, address(this));
     }
 
     function getScoreTier(uint256 appId) public returns (euint8) {
         require(applications[appId].scored, "Not scored yet");
         
         euint8 tier = applications[appId].encryptedTier;
-        FHE.allow(tier, msg.sender); // Allow the lender calling this function
+        FHE.allow(tier, msg.sender); 
 
         emit ScoreTierGranted(appId, msg.sender);
         return tier;

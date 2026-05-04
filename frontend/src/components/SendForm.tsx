@@ -4,7 +4,7 @@ import { useFhevm } from '../hooks/useFhevm';
 import { useContract } from '../hooks/useContract';
 
 export const SendForm = () => {
-    const { instance, account } = useFhevm();
+    const { instance, account, isInitializing } = useFhevm();
     const { getContract, CONTRACT_ADDRESS } = useContract();
     
     const [recipient, setRecipient] = useState('');
@@ -14,7 +14,7 @@ export const SendForm = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!instance || !account) return;
+        if (!instance || !account || isInitializing) return;
 
         try {
             setStatus('Encrypting');
@@ -102,14 +102,14 @@ export const SendForm = () => {
 
             <button 
                 type="submit" 
-                disabled={!account || !!status}
+                disabled={!account || !!status || isInitializing || !instance}
                 className={`w-full py-4 rounded-xl font-medium transition-all ${
                     !account ? 'bg-primary/50 cursor-not-allowed opacity-50' 
-                    : !!status ? 'bg-primary/80 animate-pulse'
+                    : (!!status || isInitializing) ? 'bg-primary/80 animate-pulse'
                     : 'bg-primary hover:bg-primary-hover active:scale-95'
                 }`}
             >
-                {status || (account ? "Encrypt & Send" : "Connect Wallet to Send")}
+                {isInitializing ? "Initializing FHE..." : (status || (account ? "Encrypt & Send" : "Connect Wallet to Send"))}
             </button>
 
             {status === 'Confirmed' && (

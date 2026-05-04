@@ -1,124 +1,68 @@
-# Veilr - Confidential Cross-Border Remittance
+# Veilr - Private Financial Infrastructure (FHE)
 
-**A Fully Homomorphic Encryption (FHE) powered dApp for private international transfers.**
+**A Fully Homomorphic Encryption (FHE) protocol providing private credit scoring, encrypted remittance, and threshold compliance for the next generation of DeFi.**
 
 ## Project Overview
 
-In today's Web3 landscape, all transaction amounts and recipient addresses are public on-chain by default. For the $50B/year cross-border remittance market—particularly the African diaspora sending money home to Nigeria, Ghana, and Kenya—this lack of financial privacy is a major barrier to adoption. No one wants their entire salary, savings, and remittance history visible to the public. 
+In today's Web3 landscape, every financial signal is public. Wallet balances, transaction amounts, and creditworthiness are permanently visible on-chain. This "radical transparency" is a major barrier to institutional and mass-market adoption. No one wants their entire salary, savings habits, or financial reputation exposed to the public.
 
-**Veilr** solves this by leveraging the Zama Protocol FHEVM. Senders can transfer `cUSDT` (Encrypted USDT) internationally where the amount and recipient address remain completely encrypted on-chain. The public blockchain only sees that a generic transaction occurred via nonces. At the same time, we've implemented a robust compliance layer: to satisfy AML/KYC regulations, a strictly controlled multi-sig process allows verified Compliance Officers to approve threshold decryptions for flagged transactions. 
+**Veilr** is a privacy-preserving infrastructure layer built on the Zama FHEVM. It provides a three-pillar solution for financial sovereignty:
+1.  **Private Credit Scoring**: An API-first module that allows users to generate a verifiable financial reputation (Tier 1, 2, or 3) based on their private wallet history, without revealing their raw balances or activity.
+2.  **Encrypted Remittance**: A secure transfer protocol where amounts and recipient identities remain completely encrypted on-chain.
+3.  **Threshold Compliance**: A multi-sig auditing layer that allows regulators to decrypt specific transactions only when authorized by multiple independent compliance officers.
 
-## Architecture Diagram
-
-```mermaid
-sequenceDiagram
-    participant User as SENDER_ROLE
-    participant DApp as React + @fhevm/sdk
-    participant Contract as Veilr.sol (FHEVM)
-    participant Compliance as COMPLIANCE_ROLE
-    participant Regulator as REGULATOR_ROLE
-
-    User->>DApp: Enter recipient & amount
-    DApp->>DApp: Client-side Encrypt (Amount, Recipient)
-    DApp->>Contract: send(eaddress, euint64, proof)
-    
-    Note over Contract: FHE Homomorphic Evaluation<br>TFHE.le() -> Balance check<br>TFHE.sub() -> Sender deduct<br>TFHE.add() -> Recipient credit
-    
-    Contract-->>User: Emits TransferInitiated(nonce)
-    
-    alt AML Flag Triggered Local/Off-chain
-        Compliance->>Contract: signDecryptionRequest(nonce) (1/2)
-        Compliance->>Contract: signDecryptionRequest(nonce) (2/2)
-        Contract->>Contract: TFHE.decrypt(encryptedAmount)
-        Regulator->>Contract: getDecryptedAmount(nonce)
-        Contract-->>Regulator: Return uint64
-    end
-```
-
-## How FHE is Used
+## Architecture: How FHE is Used
 
 Veilr natively uses Fully Homomorphic Encryption so that smart contracts can compute over encrypted data without ever decrypting it.
-- **`euint64` and `eaddress`**: Instead of standard `uint64` balances and `address` targets, our contract state uses encrypted types. Computations are done using `TFHE.add` and `TFHE.sub`.
-- **Anonymity via Homomorphic Selection**: To prevent leaking the recipient's identity through state, the transfer loops over an array of registered users and securely evaluates `TFHE.select(TFHE.eq(encryptedRecipient, user), transferAmount, 0)`.
-- **`TFHE.allow()`**: Ensures only specific parties (or the contract itself) can hold permissions to decrypt or interact with specific ciphertexts in the future.
 
-## Compliance Design Decision
+### 1. Private Credit Scoring (The "Black Box" API)
+Developers can integrate Veilr's credit scoring into their own lending protocols. The math happens inside a "locked box":
+-   **Encrypted Evaluation**: The contract takes private signals (transaction count, wallet age, multi-token balances) and performs a weighted evaluation entirely in ciphertext using `FHE.add` and `FHE.select`.
+-   **Tier Result Only**: Instead of returning a raw score, the API returns an **encrypted tier** (1, 2, or 3). Lenders only see what they need to know—the borrower's reliability—while the borrower's wealth remains private.
+-   **Security**: Using `FHE.allow()`, only the requesting lender (and the applicant) can hold permissions to decrypt the tier result.
 
-Privacy is a fundamental right, but unconditional financial opacity enables bad actors, which prevents real-world adoption in regulated markets. **Threshold Decryption via Multi-sig** represents the perfect middle ground. 
+### 2. Encrypted Remittance (The Stealth Send)
+-   **Anonymity via Homomorphic Selection**: To prevent leaking the recipient's identity through state changes, the transfer loops over an array of registered users and securely evaluates recipient matching homomorphically.
+-   **Zero Transaction Trail**: The public blockchain only sees that a generic transaction occurred. The amounts and destination are hidden behind FHE ciphertexts.
 
-By ensuring amounts remain encrypted by default, normal users maintain total financial privacy. However, if an off-chain heuristic flags a transaction nonce as potentially violating Anti-Money Laundering (AML) controls, `COMPLIANCE_ROLE` members can act. By requiring a 2-of-2 (or M-of-N) signature scheme, we ensure no single entity can abuse decryption powers. Once co-signed, the contract unwraps the ciphertext specifically for the `REGULATOR_ROLE`, satisfying legal requests without compromising the entire protocol's privacy properties.
+### 3. Threshold Compliance (The Auditing Layer)
+Privacy is a right, but accountability is a necessity for regulated markets.
+-   **Multi-Sig Decryption**: If a transaction is flagged for AML/KYC review, `COMPLIANCE_ROLE` members must co-sign a decryption request.
+-   **Regulatory Access**: Only after a 2-of-2 (or M-of-N) approval does the contract grant `REGULATOR_ROLE` the permission to decrypt the specific transaction amount through the Zama Gateway.
 
-## Getting Started Locally
+## Technical Stack
+-   **FHE VM**: Zama Protocol (Sepolia Testnet)
+-   **Encryption**: TFHE (Threshold Fully Homomorphic Encryption)
+-   **Frontend**: React + @fhevm/sdk
+-   **Smart Contracts**: Solidity (0.8.24) with `fhevm/solidity`
+
+## Getting Started
 
 ### 1. Install Dependencies
 ```bash
-# Root dependencies (Hardhat + FHEVM Solidity)
 npm install
-
-# Frontend dependencies
-cd frontend
-npm install
+cd frontend && npm install
 ```
 
-### 2. Run Tests
-Ensure you have local FHEVM bindings or run the mock test suite.
-```bash
-npx hardhat test
-```
-
-### 3. Deploy to Zama Protocol Sepolia Testnet
-Configure your `PRIVATE_KEY` in a `.env` file at the root.
+### 2. Deploy to Zama Sepolia
 ```bash
 npx hardhat run scripts/deploy.ts --network zama
 ```
 
-### 4. Run Frontend
-```bash
-cd frontend
-npm run dev
+### 3. Integration for Developers
+Lending protocols can integrate the Veilr API using the `IVeilrCredit.sol` interface:
+```solidity
+import "./IVeilrCredit.sol";
+
+function validateUser(address user) external {
+    euint8 tier = IVeilrCredit(veilrAddress).requestCreditTier(user, address(this));
+    // Decrypt tier off-chain via Relayer SDK to make lending decision
+}
 ```
 
 ## Deployed Contract
-
-- **Network:** Zama Protocol Sepolia Testnet (Chain ID 9000)
-- **Contract Address:** `0x3c76d71c9c12f120B4bb15E8873CBfF5F50baCd2`
+-   **Network:** Zama Protocol Sepolia Testnet (Chain ID 9000)
+-   **Contract Address:** `0xd667A750C3dba0436eBd47dC5a57B6D7BA49045e`
 
 ---
-
-## Private Credit Scoring
-
-### The Problem
-DeFi lending protocols cannot build credit systems because financial history cannot be shared privately on public blockchains. Every wallet balance, transaction amount, and counterparty is permanently visible on-chain. No one will voluntarily submit their financial history — salary, savings habits, or repayment record — to a system where that data is permanently public. This makes on-chain lending primitive: either over-collateralised (you prove you don't need the loan) or based on governance reputation, not real creditworthiness.
-
-### The Solution: FHE Computation on Encrypted Signals
-Veilr's Private Credit Scoring module solves this with a simple principle: **the math happens inside a locked box, even the blockchain does not know the inputs.**
-
-A borrower submits four encrypted financial signals:
-1. **Average Balance Tier** (1–5) — wealth signal, weight ×3
-2. **Transaction Activity** (1–3) — on-chain activity level, weight ×2
-3. **Wallet Age** (months) — longevity signal, weight ×2
-4. **Repayment History** (0 or 1) — prior loan performance, weight ×3
-
-These four values are **encrypted client-side** in the browser using the Zama FHEVM SDK before any data is sent to the blockchain. The smart contract receives only encrypted ciphertexts. It then computes the weighted score entirely in ciphertext:
-
-```
-score = (avgBalance × 3) + (txCount × 2) + (walletAge × 2) + (repaymentFlag × 3)
-```
-
-A lender calls `getScoreTier()` and receives an **encrypted tier** (1, 2, or 3) — never the raw score, never the inputs.
-
-### Three-Step User Flow
-1. **Submit Signals**: The borrower selects their financial profile using the application form. All four inputs are encrypted inside the browser using `createEncryptedInput()` before the transaction is signed.
-2. **FHE Computation**: The smart contract calls `_computeScore()`, which performs the entire weighted sum using `TFHE.mul()` and `TFHE.add()` on ciphertexts. No plaintext ever appears on-chain.
-3. **Tier Result Only**: The lender calls `getScoreTier()`, which uses `TFHE.select()` to derive a tier category from the encrypted score. The lender receives only the encrypted tier. After client-side decryption, they see "Tier 1", "Tier 2", or "Tier 3" — nothing else.
-
-### FHE Design Decisions
-
-**Why `TFHE.select()` instead of `if/else`?**
-Standard Solidity `if/else` conditions cannot operate on encrypted values — you cannot branch on a secret. `TFHE.le()` returns an encrypted boolean (`ebool`), and `TFHE.select(condition, trueValue, falseValue)` evaluates **both branches homomorphically** and returns one of them, all without revealing which branch was taken. This preserves the secrecy of the score.
-
-**Why does the lender receive a tier, not a raw score?**
-Returning the raw encrypted score to a lender would allow them to build a partial model of the borrower's inputs through repeated queries (a "ciphertext oracle" attack). By mapping scores to three discrete tiers using `TFHE.select()`, the information density is drastically reduced — the lender learns only what they need to make a lending decision, and nothing more.
-
-**Why `FHE.allow()` on the result?**
-Encrypted values in FHEVM are access-controlled at the protocol level. `FHE.allow(result, lender)` grants the specific lender's address decryption rights for that tier ciphertext. This ensures that even if the encrypted handle is intercepted, only the intended lender can decrypt it through the Zama Gateway.
+**Veilr: Building the private reputation layer of the internet.**

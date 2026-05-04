@@ -5,7 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Send } from './pages/Send';
 import { Compliance } from './pages/Compliance';
 import { Credit } from './pages/Credit';
-import { ShieldAlert, BadgeCheck } from 'lucide-react';
+import { ShieldAlert, BadgeCheck, Send as SendIcon } from 'lucide-react';
 
 const Navigation = () => {
   const location = useLocation();
@@ -23,7 +23,6 @@ const Navigation = () => {
           </Link>
           
           <div className="flex items-center gap-6 text-sm font-medium">
-            {/* Credit Score is the hero feature — visually prominent */}
             <Link 
               to="/credit" 
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all ${
@@ -33,10 +32,16 @@ const Navigation = () => {
               }`}
             >
               <BadgeCheck size={16} />
-              Credit Score
+              Private Credit
             </Link>
             <Link to="/" className={`transition-colors ${isActive('/')}`}>Dashboard</Link>
-            <Link to="/send" className={`transition-colors ${isActive('/send')}`}>Send</Link>
+            
+            <div className="h-4 w-px bg-white/10 mx-2" />
+            
+            <Link to="/send" className={`transition-colors flex items-center gap-2 ${isActive('/send')}`}>
+              <SendIcon size={14} /> Encrypted Send
+            </Link>
+            
             <Link to="/compliance" className={`transition-colors flex items-center gap-2 ${isActive('/compliance')}`}>
               <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
               Compliance

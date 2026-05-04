@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import { getAddress } from 'ethers';
 
 export const Dashboard = () => {
-    const { account, instance, provider, rawProvider } = useFhevm();
+    const { account, instance, provider, rawProvider, isInitializing } = useFhevm();
     const { getContract, CONTRACT_ADDRESS } = useContract();
     
     const [balance, setBalance] = useState<string | null>(null);
@@ -60,7 +60,7 @@ export const Dashboard = () => {
             // We store this exact value and reuse it verbatim in userDecrypt — any mismatch
             // causes the Relayer to reject the signature with a 500 error.
             const startTimestamp = Math.floor(Date.now() / 1000) - 3600;
-            const durationDays = 1;
+            const durationDays = 7;
 
             const eip712 = instance.createEIP712(
                 keypair.publicKey,
@@ -88,118 +88,97 @@ export const Dashboard = () => {
         }
     };
 
-    const fetchBalance = async (bypassAuthCheck = false) => {
+    const fetchBalances = async () => {
         if (!account || !instance) return;
         setLoading(true);
         try {
-            console.log(`Checking balance handle for ${selectedCurrency}...`);
             const contract = await getContract(true);
-            const encryptedBalanceHandle = await contract.getBalance(selectedCurrency);
+            const isAuthValid = (auth: any) => {
+                if (!auth) return false;
+                const now = Math.floor(Date.now() / 1000);
+                const expiry = auth.startTimestamp + (auth.durationDays * 86400);
+                return now < expiry;
+            };
 
-            console.log("Received balance handle raw:", encryptedBalanceHandle);
-            
-            // Normalize handle to a proper 32-byte (64-char) hex string
-            let handleHex = "0x";
+            let activeAuth = authData;
+            if (!isAuthValid(activeAuth)) {
+                setBalance(null);
+                setPoolBalance(null);
+                setLoading(false);
+                return;
+            }
+
+            // 1. Fetch Wallet Balance
             try {
-                if (encryptedBalanceHandle) {
-                    // Force hex conversion and pad to exactly 64 characters (32 bytes)
-                    let hexVal = BigInt(encryptedBalanceHandle).toString(16);
-                    handleHex = "0x" + hexVal.padStart(64, '0');
+                const walletHandle = await contract.getBalanceFor(getAddress(account), selectedCurrency);
+                if (walletHandle > 0n) {
+                    const decryptResult = await instance.userDecrypt(
+                        [{ handle: "0x" + BigInt(walletHandle).toString(16).padStart(64, '0'), contractAddress: getAddress(CONTRACT_ADDRESS) }],
+                        activeAuth.keypair.privateKey,
+                        activeAuth.keypair.publicKey,
+                        activeAuth.signer,
+                        [getAddress(CONTRACT_ADDRESS)],
+                        getAddress(account),
+                        activeAuth.startTimestamp,
+                        activeAuth.durationDays
+                    ).catch((e: any) => {
+                        if (String(e?.message).includes('500') || String(e?.message).includes('reverted')) return null;
+                        throw e;
+                    });
+
+                    if (decryptResult) {
+                        setBalance(Number(Object.values(decryptResult)[0]).toFixed(2));
+                    }
+                } else {
+                    setBalance('0.00');
                 }
             } catch (e) {
-                console.warn("Could not convert handle to hex:", e);
-                handleHex = "0x";
+                console.warn("Wallet balance decrypt failed:", e);
+                setBalance('Syncing...');
             }
 
-            console.log("Normalized handle hex:", handleHex, "Length:", handleHex.length);
+            // 2. Fetch Pool Balance
+            try {
+                const poolHandle = await contract.getPoolBalanceFor(getAddress(account), selectedCurrency);
+                if (poolHandle > 0n) {
+                    const decryptResult = await instance.userDecrypt(
+                        [{ handle: "0x" + BigInt(poolHandle).toString(16).padStart(64, '0'), contractAddress: getAddress(CONTRACT_ADDRESS) }],
+                        activeAuth.keypair.privateKey,
+                        activeAuth.keypair.publicKey,
+                        activeAuth.signer,
+                        [getAddress(CONTRACT_ADDRESS)],
+                        getAddress(account),
+                        activeAuth.startTimestamp,
+                        activeAuth.durationDays
+                    ).catch((e: any) => {
+                        if (String(e?.message).includes('500') || String(e?.message).includes('reverted')) return null;
+                        throw e;
+                    });
 
-            // A valid FHEVM handle MUST be a 32-byte hex string (0x + 64 characters)
-            const isInvalidHandle = !encryptedBalanceHandle || 
-                                   handleHex === "0x" || 
-                                   handleHex.length < 66 ||
-                                   handleHex === "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-            if (isInvalidHandle) {
-                console.log(`Handle "${handleHex}" is invalid or empty. Defaulting to 0.`);
-                setBalance('0');
-                setLoading(false);
-                return true;
-            }
-
-            // Reuse authData if we have it
-            if (!authData && !bypassAuthCheck) {
-                console.log("No authorization found. Waiting for user to authorize.");
-                setBalance(null);
-                setLoading(false);
-                return false;
-            }
-
-            // Use cached or fresh auth
-            const activeKeypair = authData?.keypair;
-            const activeSigner = authData?.signer;
-
-            if (!activeKeypair || !activeSigner) {
-                 setLoading(false);
-                 return false;
-            }
-
-            console.log("Decrypting handle using cached credentials...");
-            console.log(`Handle: ${handleHex}`);
-            console.log(`Contract: ${getAddress(CONTRACT_ADDRESS)}`);
-            console.log(`User: ${getAddress(account)}`);
-            console.log(`startTimestamp: ${authData.startTimestamp}, durationDays: ${authData.durationDays}`);
-
-            // CRITICAL: startTimestamp and durationDays MUST exactly match the values
-            // used when createEIP712 was called and signed by the wallet.
-            // Any difference causes the Relayer to fail signature verification → 500.
-            const decryptResult = await instance.userDecrypt(
-                [{ handle: handleHex, contractAddress: getAddress(CONTRACT_ADDRESS) }],
-                activeKeypair.privateKey,
-                activeKeypair.publicKey,
-                activeSigner,
-                [getAddress(CONTRACT_ADDRESS)],
-                getAddress(account),
-                authData.startTimestamp,  // Exact value that was signed
-                authData.durationDays     // Exact value that was signed
-            );
-            // userDecrypt returns an OBJECT keyed by handle hex, e.g.:
-            //   { "0xabc...def": BigInt(1000) }
-            // NOT an array. We extract the value using the handle we passed in.
-            console.log("Raw decryptResult:", decryptResult);
-
-            const values = Object.values(decryptResult);
-            if (values.length > 0) {
-                const rawValue = values[0];
-                const newBalance = rawValue.toString();
-                console.log("Decrypted balance:", newBalance);
-                setBalance(newBalance);
-                setLoading(false);
-                return true;
-            } else {
-                console.warn("Gateway returned empty decryption result.");
-                setBalance('0');
+                    if (decryptResult) {
+                        setPoolBalance(Number(Object.values(decryptResult)[0]).toFixed(2));
+                    }
+                } else {
+                    setPoolBalance('0.00');
+                }
+            } catch (e) {
+                console.warn("Pool balance decrypt failed:", e);
+                setPoolBalance('Syncing...');
             }
         } catch (error: any) {
             const errStr = String(error?.message || error);
-            // 503 = ciphertext not yet synced to Gateway — this is expected after a mint.
-            // Return 'pending' so the caller knows to wait and retry, not to show an error.
-            if (errStr.includes('503') || errStr.includes('not ready') || errStr.includes('Ciphertext')) {
-                console.log('Gateway sync pending — coprocessor still relaying. Will retry...');
-                setLoading(false);
-                return 'pending';
-            }
-            console.error('Balance fetch err:', error);
-            if (errStr.includes('Handle')) {
-                setBalance('0');
+            if (errStr.includes('503') || errStr.includes('not ready') || errStr.includes('Ciphertext') || errStr.includes('500')) {
+                console.log('Gateway sync pending...');
+            } else {
+                console.error("Failed to fetch balances:", error);
             }
         }
         setLoading(false);
-        return false;
     };
 
     useEffect(() => {
         if (account && instance) {
-            fetchBalance();
+            fetchBalances();
         }
     }, [account, instance, selectedCurrency, authData]);
 
@@ -220,8 +199,11 @@ export const Dashboard = () => {
     }, [account]);
 
     const handleMint = async () => {
-        if (!account || !instance) {
-            alert("Please connect your wallet and wait for initialization!");
+        if (!account) {
+            alert("Please connect your wallet first!");
+            return;
+        }
+        if (isInitializing || !instance) {
             return;
         }
         console.log(`Minting 1000 ${selectedCurrency}`);
@@ -245,31 +227,23 @@ export const Dashboard = () => {
             setDepositStatus('Waiting for Gateway sync (30s)...');
             await new Promise(r => setTimeout(r, INITIAL_WAIT_MS));
 
-            let decrypted = false;
             for (let i = 0; i < MAX_POLLS; i++) {
                 const attempt = i + 1;
                 setDepositStatus(`Syncing Gateway... attempt ${attempt}/${MAX_POLLS}`);
-                console.log(`Polling attempt ${attempt}/${MAX_POLLS}...`);
-
-                const result = await fetchBalance();
-                if (result === true) {
-                    // fetchBalance set the balance state directly — we're done
-                    decrypted = true;
+                
+                await fetchBalances();
+                
+                // If balance is now set, we assume sync is done
+                if (balance !== '0.00' && balance !== null) {
+                    setDepositStatus('');
                     break;
                 }
-                // result === 'pending' (503) or false — wait and retry
+
                 if (i < MAX_POLLS - 1) {
                     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
                 }
             }
-
-            if (!decrypted) {
-                console.warn('Balance did not sync within timeout. Try refreshing manually.');
-                setDepositStatus('Sync timeout — click Refresh to retry');
-                setTimeout(() => setDepositStatus(''), 5000);
-            } else {
-                setDepositStatus('');
-            }
+            setDepositStatus('');
         } catch (error) {
             console.error("Mint error:", error);
             setDepositStatus('');
@@ -278,130 +252,137 @@ export const Dashboard = () => {
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
-            {/* Stat Cards Row — Credit App Count */}
-            {account && (
-                <div className="grid grid-cols-3 gap-4">
-                    <Link 
-                        to="/credit"
-                        className="col-span-2 group flex items-center justify-between p-6 bg-gradient-to-br from-primary/20 to-surface border border-primary/30 rounded-2xl hover:border-primary/50 transition-all"
-                    >
-                        <div>
-                            <p className="text-xs text-primary font-bold uppercase tracking-wider mb-1">Credit Applications</p>
-                            <p className="text-3xl font-bold text-white">{creditAppCount}</p>
-                            <p className="text-xs text-text-muted mt-1">submitted on-chain</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-3">
-                            <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                                <BadgeCheck size={24} />
-                            </div>
-                            <div className="flex items-center gap-1 text-primary text-xs font-bold">
-                                Apply now <ArrowUpRight size={14} />
-                            </div>
-                        </div>
-                    </Link>
-                    <div className="p-6 bg-surface border border-white/5 rounded-2xl">
-                        <p className="text-xs text-text-muted font-bold uppercase tracking-wider mb-1">Network</p>
-                        <p className="text-sm font-semibold text-white">Sepolia</p>
-                        <p className="text-xs text-text-muted mt-1">Zama FHEVM</p>
-                        <div className="mt-4 flex items-center gap-2">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400"></span>
-                            </span>
-                            <span className="text-[10px] text-green-400 font-medium">Active</span>
-                        </div>
+        <div className="space-y-8 animate-in fade-in duration-700">
+            {!account ? (
+                <div className="relative overflow-hidden bg-surface border border-white/5 rounded-[2.5rem] p-12 text-center space-y-6">
+                    <div className="h-20 w-20 bg-primary/10 rounded-3xl flex items-center justify-center text-primary mx-auto mb-4">
+                        <Shield size={40} />
                     </div>
-                </div>
-            )}
-
-            {/* Currency Selector */}
-            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-                {currencies.map((c) => (
-                    <button
-                        key={c.symbol}
-                        type="button"
-                        onClick={() => setSelectedCurrency(c.symbol)}
-                        className={`flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all whitespace-nowrap ${
-                            selectedCurrency === c.symbol 
-                            ? "bg-primary/10 border-primary text-white shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]" 
-                            : "bg-surface border-white/5 text-text-muted hover:border-white/10"
-                        }`}
-                    >
-                        <span className="text-xl">{c.flag}</span>
-                        <div className="text-left">
-                            <p className="text-xs font-medium uppercase tracking-wider">{c.symbol}</p>
-                            <p className="text-sm opacity-60">{c.label}</p>
-                        </div>
-                    </button>
-                ))}
-            </div>
-
-            <div className="bg-gradient-to-br from-primary/20 to-surface border border-primary/20 rounded-3xl p-8 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-20">
-                    <Shield size={120} />
-                </div>
-                
-                <div className="flex items-center gap-4">
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-5xl font-semibold text-white tracking-tight">
-                            {!account ? '---' : loading ? '...' : (authData ? (balance || '***') : balance === '0' ? '0' : 'Confidential')}
-                        </span>
-                        <span className="text-xl text-text-muted">{selectedCurrency}</span>
-                    </div>
-                    {account && !loading && authData && (
-                        <button 
-                            type="button"
-                            onClick={() => fetchBalance()}
-                            className="p-2 hover:bg-white/10 rounded-full transition-colors text-text-muted hover:text-white"
-                            title="Refresh Balance"
-                        >
-                            <RefreshCw size={20} />
-                        </button>
-                    )}
-                    {account && !authData && (
-                        <button 
-                            type="button"
-                            onClick={handleAuthorize}
-                            className="px-4 py-2 bg-primary/20 text-primary border border-primary/30 text-sm font-medium rounded-lg hover:bg-primary/30 transition-colors"
-                        >
-                            Authorize to View
-                        </button>
-                    )}
-                </div>
-                {account && (
-                    <p className="mt-4 text-sm text-primary flex items-center gap-2">
-                        <span className="relative flex h-2 w-2">
-                          <span className={`${loading ? 'animate-ping' : ''} absolute inline-flex h-full w-full rounded-full bg-primary opacity-75`}></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                        </span>
-                        {loading ? 'Decrypting via KMS...' : 'Decrypted securely on client'}
+                    <h1 className="text-4xl font-bold text-white tracking-tight">Connect Your Wallet</h1>
+                    <p className="text-text-muted max-w-md mx-auto text-lg">
+                        Veilr uses FHE to keep your finances private. Connect your wallet to access your encrypted vault.
                     </p>
-                )}
-
-                <div className="mt-8 flex gap-4">
-                    {/* Primary CTA: Credit Scoring */}
-                    <Link to="/credit" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-background font-bold rounded-xl hover:bg-white/90 transition-colors shadow-lg">
-                        <BadgeCheck size={18} />
-                        Apply for Credit
-                    </Link>
-                    {/* Secondary CTA: Send */}
-                    <Link to="/send" className="inline-flex items-center gap-2 px-6 py-3 bg-primary/20 text-primary border border-primary/30 font-medium rounded-xl hover:bg-primary/30 transition-colors">
-                        Send Funds
-                    </Link>
-                    <button 
-                        type="button"
-                        onClick={handleMint} 
-                        disabled={loading || !!depositStatus}
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-white/5 text-text-muted border border-white/5 font-medium rounded-xl hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {(loading || !!depositStatus) && <Loader2 size={18} className="animate-spin" />}
-                        {depositStatus || `Mint Mock ${selectedCurrency}`}
-                    </button>
                 </div>
-            </div>
+            ) : (
+                <>
+                    {/* Hero Section */}
+                    <div className="relative overflow-hidden bg-surface border border-white/5 rounded-[2.5rem] p-10">
+                        <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-primary/10 to-transparent pointer-events-none" />
+                        
+                        <div className="relative z-10 flex flex-col md:flex-row gap-10 items-start justify-between">
+                            <div className="space-y-6 max-w-xl">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-primary uppercase tracking-widest">
+                                    <Shield size={14} /> Encrypted Wallet Active
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <h1 className="text-5xl font-bold text-white tracking-tight">
+                                        Your Private <span className="text-primary italic font-serif">Vault.</span>
+                                    </h1>
+                                    <p className="text-text-muted text-lg">
+                                        Manage your assets with Zero-Knowledge proofs and FHE.
+                                    </p>
+                                </div>
 
-            <TransactionHistory />
+                                <div className="flex gap-3">
+                                    <Link to="/credit" className="px-6 py-3 bg-white text-background font-bold rounded-xl hover:bg-white/90 transition-all flex items-center gap-2">
+                                        <BadgeCheck size={18} />
+                                        Private Credit
+                                    </Link>
+                                    <Link to="/send" className="px-6 py-3 bg-primary/20 text-primary border border-primary/30 font-bold rounded-xl hover:bg-primary/30 transition-all flex items-center gap-2">
+                                        <ArrowUpRight size={18} />
+                                        Send
+                                    </Link>
+                                </div>
+                            </div>
+
+                            <div className="w-full md:w-[320px] space-y-4">
+                                <div className="bg-background/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8 relative overflow-hidden group">
+                                    <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                                        <Shield size={150} />
+                                    </div>
+                                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-4">Current Balance</p>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-4xl font-bold text-white tracking-tighter">
+                                            {loading ? '...' : (authData ? (balance || '0.00') : 'Locked')}
+                                        </span>
+                                        <span className="text-sm font-medium text-text-muted">{selectedCurrency}</span>
+                                        {loading && <RefreshCw size={16} className="animate-spin text-primary" />}
+                                    </div>
+                                    
+                                    {!authData ? (
+                                        <button 
+                                            onClick={handleAuthorize}
+                                            className="mt-6 w-full py-2 bg-primary/20 text-primary text-[10px] font-bold uppercase rounded-lg border border-primary/20 hover:bg-primary/30 transition-all"
+                                        >
+                                            Unlock Vault
+                                        </button>
+                                    ) : (
+                                        <div className="mt-6 flex items-center gap-2">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                                            <span className="text-[10px] text-white font-bold uppercase">Decrypted</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    {currencies.map(c => (
+                                        <button
+                                            key={c.symbol}
+                                            onClick={() => setSelectedCurrency(c.symbol)}
+                                            className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${
+                                                selectedCurrency === c.symbol ? 'bg-primary text-white' : 'bg-white/5 text-text-muted hover:bg-white/10'
+                                            }`}
+                                        >
+                                            {c.symbol}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-surface border border-white/5 rounded-3xl p-6 flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Credit Score</p>
+                                <p className="text-2xl font-bold text-white">{creditAppCount > 0 ? 'Verified' : 'Unranked'}</p>
+                            </div>
+                            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                                <BadgeCheck size={20} />
+                            </div>
+                        </div>
+
+                        <div className="bg-surface border border-white/5 rounded-3xl p-6 flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Network Status</p>
+                                <p className="text-2xl font-bold text-white">Sepolia</p>
+                            </div>
+                            <div className="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center text-green-500">
+                                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={handleMint}
+                            disabled={loading || !!depositStatus}
+                            className="bg-surface border border-white/5 rounded-3xl p-6 flex items-center justify-between hover:border-primary/30 transition-all text-left"
+                        >
+                            <div>
+                                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Faucet</p>
+                                <p className="text-lg font-bold text-white truncate max-w-[120px]">
+                                    {depositStatus || `Mint 1000 ${selectedCurrency}`}
+                                </p>
+                            </div>
+                            <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-text-muted">
+                                {loading ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
+                            </div>
+                        </button>
+                    </div>
+
+                    <TransactionHistory />
+                </>
+            )}
         </div>
     );
 };
