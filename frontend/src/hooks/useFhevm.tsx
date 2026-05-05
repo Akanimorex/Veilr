@@ -18,6 +18,7 @@ export interface FhevmContextType {
   connect: () => Promise<void>;
   disconnect: () => void;
   switchNetwork: () => Promise<void>;
+  isConnecting: boolean;
 }
 
 const FhevmContext = createContext<FhevmContextType>({
@@ -30,6 +31,7 @@ const FhevmContext = createContext<FhevmContextType>({
   connect: async () => {},
   disconnect: () => {},
   switchNetwork: async () => {},
+  isConnecting: false,
 });
 
 export const useFhevm = () => useContext(FhevmContext);
@@ -41,6 +43,7 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   const [account, setAccount] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isWrongNetwork, setIsWrongNetwork] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const REQUIRED_CHAIN_ID = 11155111;
 
@@ -80,6 +83,9 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const connect = async () => {
+    if (isConnecting) return;
+    setIsConnecting(true);
+
     let activeProvider = window.ethereum;
     if (window.ethereum?.providers) {
         activeProvider = window.ethereum.providers.find((p: any) => p.isMetaMask) || window.ethereum.providers[0];
@@ -121,6 +127,8 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
       if (err.code !== 4001) {
           alert("Connection Error: " + (err.message || "Failed to find active account"));
       }
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -167,7 +175,7 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   }, [account, provider, rawProvider]);
 
   useEffect(() => {
-    if (localStorage.getItem('walletConnected') === 'true') {
+    if (localStorage.getItem('walletConnected') === 'true' && !account && !isConnecting) {
         connect();
     }
 
@@ -202,7 +210,7 @@ export const FhevmProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <FhevmContext.Provider value={{ instance, provider, rawProvider, account, isInitializing, isWrongNetwork, connect, disconnect, switchNetwork }}>
+    <FhevmContext.Provider value={{ instance, provider, rawProvider, account, isInitializing, isWrongNetwork, connect, disconnect, switchNetwork, isConnecting }}>
       {children}
     </FhevmContext.Provider>
   );

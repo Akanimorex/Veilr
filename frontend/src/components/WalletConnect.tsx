@@ -2,16 +2,17 @@ import { useFhevm } from '../hooks/useFhevm';
 import { LogOut } from 'lucide-react';
 
 export const WalletConnect = () => {
-    const { account, connect, disconnect, isWrongNetwork } = useFhevm();
+    const { account, connect, disconnect, isWrongNetwork, isConnecting } = useFhevm();
     const truncate = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
     if (!account) {
         return (
             <button
                 onClick={connect}
-                className="px-3.5 py-1.5 bg-white text-black text-sm font-semibold rounded-md hover:bg-white/90 transition-colors"
+                disabled={isConnecting}
+                className="px-3.5 py-1.5 bg-white text-black text-sm font-semibold rounded-md hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                Connect Wallet
+                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
             </button>
         );
     }
