@@ -7,10 +7,7 @@ import {
   Zap, 
   EyeOff, 
   CheckCircle2,
-  ChevronRight,
-  ArrowRight,
-  Database,
-  Globe
+  ArrowRight
 } from 'lucide-react';
 
 export const Landing = () => {
