@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" width="120" height="120" alt="Veilr Logo" />
-  <h1>Veilr</h1>
+  <img src="assets/logo-full.png" width="500" alt="Veilr Logo" />
   <p><b>The Private Reputation Layer for Decentralized Finance</b></p>
   
   [![Network: Sepolia](https://img.shields.io/badge/Network-Sepolia_Testnet-blueviolet?style=flat-square)](https://sepolia.etherscan.io/)

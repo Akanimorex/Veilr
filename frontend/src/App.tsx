@@ -2,11 +2,13 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import { FhevmProvider } from './hooks/useFhevm';
 import { Toaster } from 'react-hot-toast';
 import { WalletConnect } from './components/WalletConnect';
+import { Logo } from './components/Logo';
+import { Landing } from './pages/Landing';
 import { Dashboard } from './pages/Dashboard';
 import { Send } from './pages/Send';
 import { Compliance } from './pages/Compliance';
 import { Credit } from './pages/Credit';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, LayoutDashboard, CreditCard, Send as SendIcon, ShieldCheck } from 'lucide-react';
 import { useFhevm } from './hooks/useFhevm';
 
 const NetworkBanner = () => {
@@ -33,45 +35,54 @@ const NetworkBanner = () => {
 
 const Navigation = () => {
   const location = useLocation();
+  const { account } = useFhevm();
   const isActive = (path: string) => location.pathname === path;
+  
+  const isLanding = location.pathname === '/';
 
   return (
-    <nav className="border-b border-white/[0.06] bg-background/80 backdrop-blur-xl sticky top-0 z-50">
+    <nav className={`border-b border-white/[0.06] bg-background/80 backdrop-blur-xl sticky top-0 z-50 ${isLanding ? 'py-2' : ''}`}>
       <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* Logo */}
-        <div className="flex items-center gap-8">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="h-6 w-6 rounded-md bg-primary/15 border border-primary/20 flex items-center justify-center">
-              <div className="h-2.5 w-2.5 rounded-sm bg-primary" />
-            </div>
-            <span className="text-sm font-semibold tracking-tight text-white">Veilr</span>
-            <span className="text-[10px] font-bold text-text-muted/60 uppercase tracking-widest border border-white/10 rounded px-1.5 py-0.5">Sepolia</span>
+        <div className="flex items-center gap-10">
+          <Link to="/" className="flex items-center group">
+            <Logo size="md" className="opacity-95 group-hover:opacity-100 transition-opacity" />
           </Link>
 
-          {/* Nav Links */}
-          <div className="flex items-center gap-1">
-            {[
-              { path: '/', label: 'Dashboard' },
-              { path: '/credit', label: 'Credit' },
-              { path: '/send', label: 'Send' },
-              { path: '/compliance', label: 'Compliance' },
-            ].map(({ path, label }) => (
-              <Link
-                key={path}
-                to={path}
-                className={`px-3 py-1.5 rounded-md text-sm transition-colors font-medium ${
-                  isActive(path)
-                    ? 'text-white bg-white/[0.06]'
-                    : 'text-text-muted hover:text-white hover:bg-white/[0.04]'
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-          </div>
+          {/* Nav Links - Only show if not on landing or if connected */}
+          {!isLanding && (
+            <div className="flex items-center gap-1">
+              {[
+                { path: '/dashboard', label: 'Overview', icon: <LayoutDashboard size={14} /> },
+                { path: '/credit', label: 'Credit', icon: <CreditCard size={14} /> },
+                { path: '/send', label: 'Send', icon: <SendIcon size={14} /> },
+                { path: '/compliance', label: 'Audit', icon: <ShieldCheck size={14} /> },
+              ].map(({ path, label, icon }) => (
+                <Link
+                  key={path}
+                  to={path}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors font-semibold ${
+                    isActive(path)
+                      ? 'text-white bg-white/[0.06]'
+                      : 'text-text-muted hover:text-white hover:bg-white/[0.04]'
+                  }`}
+                >
+                  {icon}
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
-        <WalletConnect />
+        <div className="flex items-center gap-4">
+            {isLanding && account && (
+                <Link to="/dashboard" className="text-xs font-bold text-primary hover:text-primary-hover transition-colors">
+                    Go to App
+                </Link>
+            )}
+            <WalletConnect />
+        </div>
       </div>
     </nav>
   );
@@ -103,7 +114,8 @@ function App() {
           <Navigation />
           <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-10">
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Landing />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/send" element={<Send />} />
               <Route path="/compliance" element={<Compliance />} />
               <Route path="/credit" element={<Credit />} />
