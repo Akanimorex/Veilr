@@ -176,8 +176,7 @@ export const Landing = () => {
         </div>
         
         <div className="flex gap-8">
-          <a href="#" className="text-xs font-medium text-text-muted hover:text-white transition-colors">Documentation</a>
-          <a href="#" className="text-xs font-medium text-text-muted hover:text-white transition-colors">Smart Contracts</a>
+          <Link to="/developers" className="text-xs font-medium text-text-muted hover:text-white transition-colors">Developer Portal</Link>
           <a href="#" className="text-xs font-medium text-text-muted hover:text-white transition-colors">Zama</a>
           <a href="#" className="text-xs font-medium text-text-muted hover:text-white transition-colors">Twitter</a>
         </div>

@@ -8,7 +8,8 @@ import { Dashboard } from './pages/Dashboard';
 import { Send } from './pages/Send';
 import { Compliance } from './pages/Compliance';
 import { Credit } from './pages/Credit';
-import { AlertTriangle, RefreshCw, LayoutDashboard, CreditCard, Send as SendIcon, ShieldCheck } from 'lucide-react';
+import { Developers } from './pages/Developers';
+import { AlertTriangle, RefreshCw, LayoutDashboard, CreditCard, Send as SendIcon, ShieldCheck, Code } from 'lucide-react';
 import { useFhevm } from './hooks/useFhevm';
 
 const NetworkBanner = () => {
@@ -57,6 +58,7 @@ const Navigation = () => {
                 { path: '/credit', label: 'Credit', icon: <CreditCard size={14} /> },
                 { path: '/send', label: 'Send', icon: <SendIcon size={14} /> },
                 { path: '/compliance', label: 'Audit', icon: <ShieldCheck size={14} /> },
+                { path: '/developers', label: 'Build', icon: <Code size={14} /> },
               ].map(({ path, label, icon }) => (
                 <Link
                   key={path}
@@ -119,6 +121,7 @@ function App() {
               <Route path="/send" element={<Send />} />
               <Route path="/compliance" element={<Compliance />} />
               <Route path="/credit" element={<Credit />} />
+              <Route path="/developers" element={<Developers />} />
             </Routes>
           </main>
         </div>

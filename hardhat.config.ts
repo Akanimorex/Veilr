@@ -35,6 +35,24 @@ const config: HardhatUserConfig = {
     sources: "./contracts",
     tests: "./test",
   },
+  etherscan: {
+    apiKey: {
+      sepolia: "no-key-required",
+    },
+    customChains: [
+      {
+        network: "sepolia",
+        chainId: 11155111,
+        urls: {
+          apiURL: "https://explorer.zama.ai/api",
+          browserURL: "https://explorer.zama.ai",
+        },
+      },
+    ],
+  },
+  sourcify: {
+    enabled: true
+  }
 };
 
 export default config;
