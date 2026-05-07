@@ -10,5 +10,12 @@ export default defineConfig({
   ],
   optimizeDeps: {
     exclude: ['@zama-fhe/relayer-sdk', 'tfhe', 'node-tfhe']
-  }
+  },
+  worker: {
+    // Treat worker files as ES modules so they can import the SDK
+    format: 'es',
+    plugins: () => [
+      nodePolyfills(),
+    ],
+  },
 })
