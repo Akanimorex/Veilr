@@ -27,8 +27,9 @@ function encryptInWorker(
 
         const timeout = setTimeout(() => {
             worker.terminate();
-            reject(new Error('Encryption timed out after 60 s'));
-        }, 60_000);
+            reject(new Error('Encryption timed out (120s). This usually happens if the FHE WASM is taking a long time to initialize or the network is slow.'));
+        }, 120_000);
+
 
         worker.onmessage = (e) => {
             clearTimeout(timeout);
