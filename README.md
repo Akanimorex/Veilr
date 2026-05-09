@@ -1,72 +1,160 @@
 <div align="center">
   <img src="assets/logo-full.png" width="500" alt="Veilr Logo" />
-  <p><b>The Private Reputation Layer for Decentralized Finance</b></p>
+  <h1>The Private Reputation Layer for Decentralized Finance</h1>
+  <p><b>Bridging the gap between radical transparency and absolute financial privacy using FHE.</b></p>
   
-  [![Network: Sepolia](https://img.shields.io/badge/Network-Sepolia_Testnet-blueviolet?style=flat-square)](https://sepolia.etherscan.io/)
-  [![Privacy: FHE](https://img.shields.io/badge/Privacy-FHE-blue?style=flat-square)](https://zama.ai/fhevm)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+  [![Network: Sepolia](https://img.shields.io/badge/Network-Sepolia_Testnet-blueviolet?style=for-the-badge&logo=ethereum)](https://sepolia.etherscan.io/)
+  [![Privacy: FHE](https://img.shields.io/badge/Privacy-FHE-blue?style=for-the-badge)](https://zama.ai/fhevm)
+  [![Tech: Relayer SDK](https://img.shields.io/badge/Tech-Relayer_SDK-cyan?style=for-the-badge)](https://docs.zama.ai/)
 </div>
 
 ---
 
-## Project Overview
+## 💡 The Problem: Radical Transparency
+Web3 has a privacy problem. To prove you are a "good borrower" or a "trusted actor," you currently have to expose your entire wallet history, balances, and financial behavior to the public. This **radical transparency** is the primary barrier preventing institutional and retail adoption of private DeFi.
 
-**Veilr** is a privacy-first credit infrastructure built on Zama's FHEVM. It solves the "Radical Transparency" problem in Web3 by allowing users to prove their creditworthiness without ever exposing their transaction history, balances, or financial behavior to the public.
+## 🛡️ The Solution: Veilr
+**Veilr** is a privacy-first infrastructure layer built on **Zama's FHEVM**. It allows users to generate and prove their financial reputation without ever revealing their underlying data. 
 
-By leveraging Fully Homomorphic Encryption (FHE), Veilr enables **Private Credit Scoring**—a "Black Box" evaluation where sensitive financial signals are processed entirely in ciphertext. The result is a verifiable reputation tier that lenders can trust, while the borrower's privacy remains absolute.
+By leveraging **Fully Homomorphic Encryption (FHE)**, Veilr enables smart contracts to perform complex credit scoring and transfers entirely in ciphertext. The data is never decrypted on-chain, yet the results are verifiable and actionable.
 
-### Core Features
+---
 
-1.  **🏆 Private Credit Scoring (Main Feature)**: Generate a verifiable financial tier (1, 2, or 3) based on encrypted wallet signals (age, transaction frequency, liquidity). The underlying data never leaves its encrypted state.
-2.  **🛡️ Encrypted Remittance**: A secure transfer protocol where transaction amounts and recipient identities are hidden behind FHE ciphertexts, preventing "rich-list" tracking and front-running.
-3.  **⚖️ Threshold Compliance**: A multi-sig governance layer that allows authorized compliance officers to collectively decrypt specific transaction details for AML/KYC requirements, balancing privacy with accountability.
+## 🏗️ Protocol Architecture
 
-## Architecture: How FHE is Used
+Veilr operates as a multi-layer privacy stack:
 
-Veilr natively uses Fully Homomorphic Encryption so that smart contracts can compute over encrypted data without ever decrypting it.
+### 1. Private Transfer Layer (Remittance)
+- **Zero Trail**: Amounts and recipients are hidden behind FHE ciphertexts.
+- **Selection Anonymity**: Uses homomorphic matching to update balances without leaking which user received funds.
+- **Off-Thread Encryption**: High-performance encryption using Web Workers (WASM) to keep the UI responsive.
 
-### 1. Private Credit Scoring (The "Black Box")
-Developers can integrate Veilr's credit scoring into their own lending protocols. The math happens inside a "locked box":
--   **Encrypted Evaluation**: The contract takes private signals (transaction count, wallet age, multi-token balances) and performs a weighted evaluation entirely in ciphertext using `FHE.add` and `FHE.select`.
--   **Tier Result Only**: Instead of returning a raw score, the API returns an **encrypted tier**. Lenders only see what they need to know—the borrower's reliability—while the borrower's wealth remains private.
--   **Security**: Using `FHE.allow()`, only the requesting lender (and the applicant) can hold permissions to decrypt the tier result.
+### 2. Private Credit Scoring (Reputation)
+- **Weighted Signals**: Computes tiers (1, 2, or 3) based on wallet age, transaction frequency, and multi-token liquidity.
+- **Ciphertext Logic**: All scoring logic (e.g., `FHE.ge`, `FHE.select`) runs inside the FHEVM.
+- **Selective Disclosure**: Using `FHE.allow()`, results are only visible to the applicant and the authorized lender.
 
-### 2. Encrypted Remittance (Stealth Transfers)
--   **Anonymity via Homomorphic Selection**: To prevent leaking the recipient's identity through state changes, the transfer loops over registered users and securely evaluates recipient matching homomorphically.
--   **Zero Transaction Trail**: The public blockchain only sees that a generic transaction occurred. The amounts and destination are hidden behind FHE ciphertexts.
+### 3. Threshold Audit (Compliance)
+- **Privacy + Accountability**: A multi-sig governance layer for compliance.
+- **Collective Decryption**: Requires 2/2 signatures from authorized auditors to reveal encrypted transaction details for AML/KYC purposes.
 
-## Technical Stack
+---
 
--   **FHE VM**: Zama FHEVM (Sepolia Testnet)
--   **Chain ID**: 11155111
--   **Encryption**: TFHE (Threshold Fully Homomorphic Encryption)
--   **Frontend**: React (Vite) + @zama-fhe/relayer-sdk
--   **Smart Contracts**: Solidity (0.8.27) with `fhevm/solidity`
+## 📊 Technical Flow (FHE)
 
-## Getting Started
+```mermaid
+graph TD
+    User((User)) -->|Plaintext Data| SDK[Relayer SDK + Web Worker]
+    SDK -->|Encrypted Input + ZK Proof| Contract[Veilr Smart Contract]
+    Contract -->|FHE Computation| FHEVM[FHEVM Linear Memory]
+    FHEVM -->|Encrypted Result| DB[(Encrypted State)]
+    DB -->|FHE.allow| Lender((Lender/DApp))
+    
+    subgraph "Encrypted Execution"
+    Contract
+    FHEVM
+    end
+```
 
-### 1. Install Dependencies
+---
+
+## 🚀 Technical Highlights
+
+### ⚡ Performance: Off-Thread FHE Encryption
+FHE encryption is computationally expensive. Veilr solves the "Main Thread Freeze" problem by offloading all cryptographic WASM operations to **Web Workers**. This ensures the DApp remains at 60fps even during complex ciphertext generation.
+
+### 🔒 Privacy-First Credit Signals
+Veilr doesn't just store balances; it computes over them.
+```solidity
+// Example: Encrypted activity check
+ebool isTier1 = FHE.and(
+    FHE.ge(count1000, uint8(3)), // Has at least 3 high-value balances
+    FHE.ge(vActivity, uint64(10)) // Has at least 10 interactions
+);
+```
+
+---
+
+## 🛠️ Developer Integration
+
+Veilr is built as an infrastructure layer. Other protocols can verify a user's credit tier with a single interface call:
+
+```solidity
+import "./IVeilrCredit.sol";
+
+contract MockLender {
+    IVeilrCredit public veilr;
+
+    function assessBorrower(address borrower) external {
+        // Request the encrypted credit tier
+        // Only this contract will be allowed to see the result
+        euint8 tier = veilr.requestCreditTier(borrower, address(this));
+        
+        // Compute logic privately on the tier
+        ebool isTrusted = FHE.le(tier, uint8(2));
+        // ...
+    }
+}
+```
+
+---
+
+## 🧪 Judging & Testing Guide
+
+To verify the FHE integration, follow these steps:
+
+1.  **Wallet Connection**: Use MetaMask on Sepolia. The DApp will automatically handle the network switch.
+2.  **Encrypted Minting**: Click "Deposit Test cUSDT" on the Dashboard. This mints 1000 tokens using `FHE.asEuint64`.
+3.  **Encrypted Balance Decryption**: Sign the EIP-712 request. This uses Zama's re-encryption logic to safely decrypt your private balance in the browser.
+4.  **Private Send**: Navigate to the "Send" page. Enter a recipient and amount. The DApp will generate a ZK Input Proof off-thread (using Web Workers) and submit the ciphertext.
+5.  **Verify Privacy**: Check the transaction on Sepolia Etherscan. You will notice that the `amount` and `recipient` parameters are encrypted handles, not plaintext.
+
+---
+
+## 📦 Getting Started
+
+
+### Prerequisites
+- Node.js v20+
+- Metamask (Connected to Sepolia)
+
+### 1. Installation
 ```bash
+# Clone the repository
+git clone https://github.com/your-repo/veilr
+cd veilr
+
+# Install root dependencies
 npm install
+
+# Install frontend dependencies
 cd frontend && npm install
 ```
 
-### 2. Deploy to Sepolia
+### 2. Deployment
+Configure your `.env` with your `PRIVATE_KEY` and `SEPOLIA_RPC_URL`.
 ```bash
+npx hardhat compile
 npx hardhat run scripts/deploy.ts --network sepolia
 ```
 
-### 3. Run Frontend
+### 3. Development
 ```bash
-cd frontend && npm run dev
+cd frontend
+npm run dev
 ```
 
-## Deployed Contract
+---
 
--   **Network:** Ethereum Sepolia Testnet
--   **Chain ID:** 11155111
--   **Contract Address:** `0xd667A750C3dba0436eBd47dC5a57B6D7BA49045e`
+## 🛣️ Roadmap
+- [x] **Phase 1**: Core FHEVM Transfer & Credit Scoring.
+- [x] **Phase 2**: Relayer SDK Integration & Web Worker Optimization.
+- [ ] **Phase 3**: Private Lending Pool Integration (Layer 3).
+- [ ] **Phase 4**: Cross-chain reputation signals using FHE proofs.
 
 ---
-**Veilr: Building the private reputation layer of the internet.**
 
+<div align="center">
+  <p><b>Built for the Zama FHEVM Hackathon</b></p>
+  <img src="assets/logo.png" width="100" alt="Veilr Mini Logo" />
+</div>
