@@ -152,9 +152,3 @@ npm run dev
 - [ ] **Phase 3**: Private Lending Pool Integration (Layer 3).
 - [ ] **Phase 4**: Cross-chain reputation signals using FHE proofs.
 
----
-
-<div align="center">
-  <p><b>Built for the Zama FHEVM Hackathon</b></p>
-  <img src="assets/logo.png" width="100" alt="Veilr Mini Logo" />
-</div>
